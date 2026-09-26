@@ -5,7 +5,7 @@
   "description": "Buy the real share, not the wrapper: compares Ondo, xStocks and bStock versions of the same US stock on BNB Smart Chain.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.9"
   },
   "scripts": {
     "compare": "node --env-file-if-exists=.env scripts/compare.js",
