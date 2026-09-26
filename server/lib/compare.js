@@ -21,7 +21,14 @@ export function pickReference(snapshots) {
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
 }
 
-export function assessRoute(token, snapshot, { reference, session, policy = DEFAULT_POLICY }) {
+// Trading API errors that mean "this route cannot be traded right now".
+const QUOTE_ERRORS = {
+  40374: ['no_liquidity', 'Not enough liquidity to fill this amount right now.'],
+  40367: ['market_closed', 'Ondo is not taking orders outside US market hours.'],
+  40369: ['market_closed', 'bStock is not taking orders outside US market hours.'],
+};
+
+export function assessRoute(token, snapshot, { reference, session, quote, usd, policy = DEFAULT_POLICY }) {
   const provider = PROVIDERS[token.type];
   const tokenPrice = num(snapshot.tokenPrice);
   const multiplier = num(snapshot.multiplier ?? token.multiplier);
@@ -44,11 +51,30 @@ export function assessRoute(token, snapshot, { reference, session, policy = DEFA
     block('corporate_action', status.reasonMsg || `Trading is limited: ${status.reasonCode}.`);
   }
 
-  let perShare = null;
+  let listedPerShare = null;
   if (!(tokenPrice > 0) || !(multiplier > 0)) {
     block('no_price', 'No usable on-chain price or share multiplier for this token.');
   } else {
-    perShare = tokenPrice / multiplier;
+    listedPerShare = tokenPrice / multiplier;
+  }
+
+  // An executable quote beats the listed price: it is what the money actually buys,
+  // after fees, routing and slippage. A failed quote means the route cannot be used.
+  let perShare = listedPerShare;
+  let priceBasis = 'listed';
+  let execution = null;
+  if (quote?.error) {
+    const [code, message] = QUOTE_ERRORS[quote.error.code] ?? ['quote_failed', `No quote: ${quote.error.message}`];
+    block(code, message);
+  } else if (quote?.tokensOut > 0 && multiplier > 0 && usd > 0) {
+    perShare = usd / (quote.tokensOut * multiplier);
+    priceBasis = 'quote';
+    execution = {
+      mode: quote.executionMode,
+      vendor: quote.vendorName,
+      hops: quote.hops,
+      priceImpactPct: num(quote.priceImpactPercent),
+    };
   }
 
   let premiumPct = null;
@@ -65,7 +91,9 @@ export function assessRoute(token, snapshot, { reference, session, policy = DEFA
   }
 
   if (session && session.openState === false) {
-    if (provider.closedMarketError) {
+    // An AMM swap that already quoted does not depend on US hours; RFQ and unquoted routes might.
+    const quotedAsSwap = execution?.mode === 'SWAP';
+    if (provider.closedMarketError && !quotedAsSwap) {
       warn('market_closed', `US market is closed (${session.reasonMsg ?? 'closed'}); ${provider.name} orders may be refused until it reopens.`);
     }
     if (premiumPct !== null) {
@@ -78,10 +106,14 @@ export function assessRoute(token, snapshot, { reference, session, policy = DEFA
     address: token.address,
     provider: provider.id,
     providerName: provider.name,
-    execution: provider.execution,
+    // What the docs say about this issuer, and what the live quote actually did.
+    documentedExecution: provider.execution,
+    execution,
     tokenPrice,
     multiplier,
+    listedPerShare,
     perShare,
+    priceBasis,
     premiumPct,
     verdict,
     reasons,
@@ -104,10 +136,14 @@ export function rankRoutes(routes, side = 'buy') {
   });
 }
 
-export function compare(tokens, snapshots, { usd, side = 'buy', session = null, policy = DEFAULT_POLICY } = {}) {
-  const reference = pickReference(snapshots);
+export function compare(
+  tokens,
+  snapshots,
+  { usd, side = 'buy', session = null, quotes = [], reference: referenceOverride = null, policy = DEFAULT_POLICY } = {},
+) {
+  const reference = referenceOverride?.price ?? pickReference(snapshots);
   const routes = rankRoutes(
-    tokens.map((t, i) => assessRoute(t, snapshots[i], { reference, session, policy })),
+    tokens.map((t, i) => assessRoute(t, snapshots[i], { reference, session, quote: quotes[i], usd, policy })),
     side,
   );
   for (const r of routes) {
@@ -120,6 +156,7 @@ export function compare(tokens, snapshots, { usd, side = 'buy', session = null, 
   const edgePct = best && worst ? (Math.abs(best.perShare - worst.perShare) / worst.perShare) * 100 : null;
   return {
     reference,
+    referenceSource: referenceOverride?.source ?? 'majority of provider feeds',
     session,
     side,
     usd: usd ?? null,
@@ -127,6 +164,5 @@ export function compare(tokens, snapshots, { usd, side = 'buy', session = null, 
     edgePct,
     edgeUsd: edgePct !== null && usd ? (usd * edgePct) / 100 : null,
     routes,
-    priceBasis: 'indicative', // listed on-chain price; executable quotes come from the Trading API
   };
 }

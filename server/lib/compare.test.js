@@ -92,6 +92,28 @@ test('a closed-market reference is a note, not a warning', () => {
   assert.equal(result.routes[0].reasons[0].severity, 'info');
 });
 
+test('an executable quote replaces the listed price; a failed quote refuses the route', () => {
+  const snaps = [
+    { tokenPrice: '344.55', multiplier: '1.00246', referencePrice: '343.705', status: trading },
+    { tokenPrice: '339.00', multiplier: '1.00193', referencePrice: '343.705', status: trading },
+    { tokenPrice: '343.70', multiplier: '1.00048', referencePrice: '343.705', status: trading },
+  ];
+  const quotes = [
+    { tokensOut: 0.028760256, executionMode: 'SWAP', vendorName: 'LiquidMesh', hops: 1 },
+    { error: { code: 40374, message: 'Insufficient liquidity' } },
+    { tokensOut: 0.029103821, executionMode: 'SWAP', vendorName: 'LiquidMesh', hops: 4 },
+  ];
+  const result = compare(tokens, snaps, { usd: 10, quotes, reference: { price: 343.705, source: 'test' } });
+  const x = result.routes.find((r) => r.symbol === 'GOOGLx');
+  assert.equal(x.verdict, 'blocked');
+  assert.equal(x.reasons[0].code, 'no_liquidity');
+  const on = result.routes.find((r) => r.symbol === 'GOOGLon');
+  assert.equal(on.priceBasis, 'quote');
+  assert.ok(Math.abs(on.perShare - 10 / (0.028760256 * 1.00246)) < 1e-9);
+  assert.equal(result.best, 'GOOGLB');
+  assert.equal(result.referenceSource, 'test');
+});
+
 test('no eligible route means no pick', () => {
   const snaps = tokens.map(() => ({ tokenPrice: null, multiplier: '1', referencePrice: '100', status: trading }));
   assert.equal(compare(tokens, snaps, { usd: 10 }).best, null);
