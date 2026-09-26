@@ -9,6 +9,7 @@ export const DEFAULT_POLICY = {
   maxPremiumPct: 3,
 };
 
+const signed = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(2)}%`;
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
 // The reference is the underlying US stock price. Providers usually agree on it; when they
@@ -82,9 +83,9 @@ export function assessRoute(token, snapshot, { reference, session, quote, usd, p
     premiumPct = ((perShare - reference) / reference) * 100;
     const distance = Math.abs(premiumPct);
     if (distance > policy.maxPremiumPct) {
-      block('off_reference', `Priced ${premiumPct.toFixed(2)}% away from the stock; the limit is ±${policy.maxPremiumPct}%.`);
+      block('off_reference', `Priced ${signed(premiumPct)} away from the stock; the limit is ±${policy.maxPremiumPct}%.`);
     } else if (distance > policy.cautionPremiumPct) {
-      warn('off_reference', `Priced ${premiumPct.toFixed(2)}% away from the stock.`);
+      warn('off_reference', `Priced ${signed(premiumPct)} away from the stock.`);
     }
   } else if (perShare !== null) {
     warn('no_reference', 'No reference stock price to check this token against.');

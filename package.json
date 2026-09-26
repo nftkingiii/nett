@@ -11,7 +11,17 @@
     "compare": "node --env-file-if-exists=.env scripts/compare.js",
     "test": "node --test \"server/**/*.test.js\"",
     "probe": "node --env-file-if-exists=.env scripts/probe-quotes.js",
-    "start": "node --env-file-if-exists=.env server/index.js"
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "build": "vite build",
+    "dev:web": "vite"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/newsreader": "^5.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "vite": "^8.3.1"
+  }
 }
