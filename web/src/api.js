@@ -10,6 +10,19 @@ async function getJson(url) {
   return body;
 }
 
+export async function prepareTrade(body) {
+  const res = await fetch('/api/trade/prepare', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error ?? `Could not prepare the trade (${res.status}).`);
+  return json;
+}
+
+export const fetchTradeStatus = (txHash) => getJson(`/api/trade/status?txHash=${encodeURIComponent(txHash)}`);
+
 export const fetchHealth = () => getJson('/api/health');
 export const fetchStocks = () => getJson('/api/stocks').then((b) => b.stocks);
 export const fetchComparison = ({ ticker, usd }) =>

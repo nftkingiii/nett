@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildComparison, listStocks } from './lib/nett.js';
 import { hasCredentials } from './lib/web3api.js';
+import { prepareTrade, tradeStatus, TradeError, TRADE_LIMITS } from './lib/trade.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'dist');
@@ -35,6 +36,23 @@ export function parseCompareQuery(searchParams) {
   if (side !== 'buy' && side !== 'sell') return { error: 'Side must be buy or sell.' };
   return { ticker, usd, side };
 }
+
+async function readJson(req, limit = 4096) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new TradeError('too_large', 'Request body too large.');
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  } catch {
+    throw new TradeError('bad_json', 'Request body must be JSON.');
+  }
+}
+
+const TRADE_STATUS = { bad_wallet: 400, bad_amount: 400, bad_hash: 400, bad_json: 400, too_large: 413, not_found: 404, unknown_version: 404 };
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
@@ -76,6 +94,30 @@ const server = http.createServer(async (req, res) => {
       const result = await buildComparison(q);
       return send(res, result.notFound ? 404 : 200, result);
     }
+    if (url.pathname === '/api/trade/prepare' && req.method === 'POST') {
+      if (rateLimited(ip)) return send(res, 429, { error: 'Too many requests; wait a minute.' });
+      try {
+        const body = await readJson(req);
+        const ticker = String(body.ticker ?? '').trim().toUpperCase();
+        const symbol = String(body.symbol ?? '').trim();
+        if (!/^[A-Z0-9.]{1,12}$/.test(ticker) || !/^[A-Za-z0-9.]{1,16}$/.test(symbol)) {
+          return send(res, 400, { error: 'Choose a stock and a version.' });
+        }
+        return send(res, 200, await prepareTrade({ ticker, symbol, usd: Number(body.usd), wallet: body.wallet }));
+      } catch (err) {
+        if (err instanceof TradeError) return send(res, TRADE_STATUS[err.code] ?? 409, { error: err.message, code: err.code });
+        throw err;
+      }
+    }
+    if (url.pathname === '/api/trade/status') {
+      try {
+        return send(res, 200, await tradeStatus(url.searchParams.get('txHash')));
+      } catch (err) {
+        if (err instanceof TradeError) return send(res, 400, { error: err.message, code: err.code });
+        throw err;
+      }
+    }
+    if (url.pathname === '/api/trade/limits') return send(res, 200, TRADE_LIMITS);
     if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });
     return serveStatic(res, url.pathname);
   } catch (err) {

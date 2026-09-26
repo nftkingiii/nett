@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchComparison, fetchStocks } from './api.js';
 import { localDateTime, pct, shares, time, usd } from './format.js';
+import Trade from './Trade.jsx';
 
 const QUICK = ['GOOGL', 'AAPL', 'NVDA', 'QQQ'];
 const PROVIDER_LOGO = {
@@ -8,7 +9,7 @@ const PROVIDER_LOGO = {
   bstock: 'https://public.bnbstatic.com/images/w3w/openapi/bstocks.png',
 };
 
-export default function Compare() {
+export default function Compare({ wallet, walletError, onConnect }) {
   const [stocks, setStocks] = useState([]);
   const [query, setQuery] = useState('Alphabet (GOOGL)');
   const [amount, setAmount] = useState('10');
@@ -116,7 +117,7 @@ export default function Compare() {
       )}
 
       {state.status === 'loading' && !result && <ResultSkeleton />}
-      {result && <Result result={result} stale={state.status === 'loading'} />}
+      {result && <Result result={result} stale={state.status === 'loading'} wallet={wallet} walletError={walletError} onConnect={onConnect} />}
     </div>
   );
 }
@@ -125,7 +126,9 @@ function shortName(name) {
   return name.replace(/,?\s+(Inc\.?|Incorporated|Corp\.?|Corporation|Ltd\.?|plc|N\.?V\.?|Holding)\b.*$/i, '').trim();
 }
 
-function Result({ result, stale }) {
+function Result({ result, stale, wallet, walletError, onConnect }) {
+  const [buying, setBuying] = useState(null);
+  useEffect(() => setBuying(null), [result.ticker, result.usd]);
   const best = result.routes.find((r) => r.symbol === result.best);
   const refused = result.routes.filter((r) => r.verdict === 'blocked').length;
   const s = result.session;
@@ -172,7 +175,19 @@ function Result({ result, stale }) {
 
       <ol className="routes">
         {result.routes.map((r) => (
-          <RouteRow key={r.symbol} route={r} isBest={r.symbol === result.best} usdAmount={result.usd} />
+          <RouteRow
+            key={r.symbol}
+            route={r}
+            isBest={r.symbol === result.best}
+            usdAmount={result.usd}
+            canBuy={result.mode === 'executable' && r.verdict !== 'blocked' && result.usd <= 50}
+            onBuy={() => setBuying(r.symbol)}
+            trade={
+              buying === r.symbol && (
+                <Trade route={r} ticker={result.ticker} amount={result.usd} wallet={wallet} walletError={walletError} onConnect={onConnect} onClose={() => setBuying(null)} />
+              )
+            }
+          />
         ))}
       </ol>
 
@@ -190,7 +205,7 @@ function describeGap(p) {
   return `${pct(p).replace('+', '')} ${p > 0 ? 'above' : 'below'}`;
 }
 
-function RouteRow({ route: r, isBest, usdAmount }) {
+function RouteRow({ route: r, isBest, usdAmount, canBuy, onBuy, trade }) {
   const blocked = r.verdict === 'blocked';
   const main = r.reasons.filter((x) => x.severity !== 'info');
   const how = r.execution
@@ -230,7 +245,13 @@ function RouteRow({ route: r, isBest, usdAmount }) {
             ))}
           </ul>
         )}
+        {canBuy && !trade && (
+          <button type="button" className={isBest ? 'primary small-btn' : 'ghost small-btn'} onClick={onBuy}>
+            Buy {r.symbol}
+          </button>
+        )}
       </div>
+      {trade}
     </li>
   );
 }
