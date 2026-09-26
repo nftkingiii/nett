@@ -54,6 +54,33 @@ async function readJson(req, limit = 4096) {
 
 const TRADE_STATUS = { bad_wallet: 400, bad_amount: 400, bad_hash: 400, bad_json: 400, too_large: 413, not_found: 404, unknown_version: 404 };
 
+// Company and issuer logos, proxied same-origin. Binance's image CDN stalls some cross-site
+// requests, so the server fetches allowlisted hosts with a timeout and caches the bytes.
+const LOGO_HOSTS = new Set(['onchainos.bnbstatic.com', 'public.bnbstatic.com', 'bin.bnbstatic.com']);
+const logoCache = new Map();
+async function serveLogo(res, raw) {
+  let target;
+  try {
+    target = new URL(raw ?? '');
+  } catch {
+    return send(res, 400, { error: 'Bad logo URL.' });
+  }
+  if (target.protocol !== 'https:' || !LOGO_HOSTS.has(target.hostname)) return send(res, 400, { error: 'Logo host not allowed.' });
+  let hit = logoCache.get(target.href);
+  if (!hit) {
+    const upstream = await fetch(target, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+    const type = upstream?.headers.get('content-type') ?? '';
+    if (!upstream?.ok || !type.startsWith('image/')) return send(res, 404, { error: 'Logo unavailable.' });
+    const body = Buffer.from(await upstream.arrayBuffer());
+    if (body.length > 512 * 1024) return send(res, 413, { error: 'Logo too large.' });
+    hit = { type, body };
+    if (logoCache.size > 800) logoCache.delete(logoCache.keys().next().value);
+    logoCache.set(target.href, hit);
+  }
+  res.writeHead(200, { 'Content-Type': hit.type, 'Cache-Control': 'public, max-age=86400' });
+  return res.end(hit.body);
+}
+
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 
 async function serveStatic(res, urlPath) {
@@ -87,6 +114,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/health') {
       return send(res, 200, { ok: true, revision: REVISION, quotes: hasCredentials() });
     }
+    if (url.pathname === '/api/logo') return serveLogo(res, url.searchParams.get('u'));
     if (url.pathname === '/api/showcase') {
       return send(res, 200, await showcase());
     }
