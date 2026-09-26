@@ -3,7 +3,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildComparison, listStocks } from './lib/nett.js';
+import { buildComparison, holdings, listStocks } from './lib/nett.js';
 import { hasCredentials } from './lib/web3api.js';
 import { prepareTrade, tradeStatus, TradeError, TRADE_LIMITS } from './lib/trade.js';
 
@@ -116,6 +116,12 @@ const server = http.createServer(async (req, res) => {
         if (err instanceof TradeError) return send(res, 400, { error: err.message, code: err.code });
         throw err;
       }
+    }
+    if (url.pathname === '/api/holdings') {
+      const address = url.searchParams.get('address') ?? '';
+      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return send(res, 400, { error: 'Not a wallet address.' });
+      if (rateLimited(ip)) return send(res, 429, { error: 'Too many requests; wait a minute.' });
+      return send(res, 200, { address, holdings: await holdings(address) });
     }
     if (url.pathname === '/api/trade/limits') return send(res, 200, TRADE_LIMITS);
     if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });

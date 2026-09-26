@@ -114,6 +114,14 @@ test('an executable quote replaces the listed price; a failed quote refuses the 
   assert.equal(result.referenceSource, 'test');
 });
 
+test('a closed market is refused as closed, not as a halt', () => {
+  const snaps = [{ tokenPrice: '100', multiplier: '1', referencePrice: '100', status: { openState: false, reasonCode: 'MARKET_CLOSED', reasonMsg: 'Weekend or Holiday' } }];
+  const r = compare([tokens[0]], snaps, { usd: 10 }).routes[0];
+  assert.equal(r.verdict, 'blocked');
+  assert.equal(r.reasons[0].code, 'market_closed');
+  assert.match(r.reasons[0].message, /closed until the US market reopens/);
+});
+
 test('no eligible route means no pick', () => {
   const snaps = tokens.map(() => ({ tokenPrice: null, multiplier: '1', referencePrice: '100', status: trading }));
   assert.equal(compare(tokens, snaps, { usd: 10 }).best, null);

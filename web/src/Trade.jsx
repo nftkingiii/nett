@@ -97,7 +97,7 @@ function Action({ text, label, onClick }) {
   return (
     <div className="trade-action">
       <p>{text}</p>
-      <button type="button" className="primary" onClick={onClick}>{label}</button>
+      <button type="button" className="btn btn-accent" onClick={onClick}>{label}</button>
     </div>
   );
 }
@@ -117,7 +117,7 @@ function Review({ plan, onSign, onCancel }) {
           <div><dt>Simulation</dt><dd className={sim.ok ? 'good' : 'bad'}>{sim.ok ? 'Passes' : `Fails: ${sim.failReason || sim.status}`}</dd></div>
         </dl>
         <div className="review-actions">
-          <button type="button" className="primary" disabled={!sim.ok} onClick={onSign}>Approve {usd(plan.usd)} USDT in wallet</button>
+          <button type="button" className="btn btn-accent" disabled={!sim.ok} onClick={onSign}>Approve {usd(plan.usd)} USDT in wallet</button>
           <button type="button" className="link" onClick={onCancel}>Cancel</button>
         </div>
       </div>
@@ -136,7 +136,7 @@ function Review({ plan, onSign, onCancel }) {
       </dl>
       <p className="muted small">The quote behind this transaction expires in about 30 seconds. If your wallet rejects it as stale, prepare again.</p>
       <div className="review-actions">
-        <button type="button" className="primary" disabled={!sim.ok} onClick={onSign}>Confirm in wallet</button>
+        <button type="button" className="btn btn-accent" disabled={!sim.ok} onClick={onSign}>Confirm in wallet</button>
         <button type="button" className="link" onClick={onCancel}>Cancel</button>
       </div>
     </div>

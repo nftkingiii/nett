@@ -46,7 +46,9 @@ export function assessRoute(token, snapshot, { reference, session, quote, usd, p
   const note = (code, message) => reasons.push({ code, message, severity: 'info' });
 
   const status = snapshot.status;
-  if (status?.openState === false) {
+  if (status?.reasonCode === 'MARKET_CLOSED') {
+    block('market_closed', `${provider.name} is closed until the US market reopens${status.reasonMsg ? ` (${status.reasonMsg})` : ''}.`);
+  } else if (status?.openState === false) {
     block('not_trading', status.reasonMsg || `Trading is paused (${status.reasonCode ?? 'no reason given'}).`);
   } else if (status?.reasonCode && status.reasonCode !== 'TRADING') {
     block('corporate_action', status.reasonMsg || `Trading is limited: ${status.reasonCode}.`);

@@ -64,32 +64,105 @@ async function quoteAll(tokens, usd, receiver) {
   );
 }
 
-// Stocks that have at least one BSC version, with names from the official list where available.
-let stockCache = { at: 0, stocks: null };
+// Official RWA token list (Ondo + bStock on BSC): names, logos, ratios, status, listed prices.
+// One call returns everything, so cache it briefly and reuse it for Discover and Holdings.
+let officialCache = { at: 0, tokens: null };
+async function officialTokens() {
+  if (!hasCredentials()) return [];
+  if (officialCache.tokens && Date.now() - officialCache.at < 60 * 1000) return officialCache.tokens;
+  const tokens = await call('GET', '/api/v1/dex/market/rwa/tokens', { params: { binanceChainId: 56 } }).catch(() => null);
+  if (!tokens) return officialCache.tokens ?? [];
+  // The endpoint has been seen returning duplicates; key by address.
+  const unique = [...new Map(tokens.map((t) => [t.tokenContractAddress.toLowerCase(), t])).values()];
+  officialCache = { at: Date.now(), tokens: unique };
+  return unique;
+}
+
+const PROVIDER_BY_TYPE = { 1: 'ondo', 2: 'xstocks', 3: 'bstock' };
+
+// Every stock with at least one BSC version: name, logo, versions, and listed price per real share.
 export async function listStocks() {
-  if (stockCache.stocks && Date.now() - stockCache.at < 10 * 60 * 1000) return stockCache.stocks;
   const [publicTokens, official] = await Promise.all([
     import('./rwa.js').then((m) => m.listBscTokens()),
-    hasCredentials()
-      ? call('GET', '/api/v1/dex/market/rwa/tokens', { params: { binanceChainId: 56 } }).catch(() => [])
-      : [],
+    officialTokens(),
   ]);
-  const names = new Map();
-  for (const t of official ?? []) {
-    if (t.underlyingTicker && t.underlyingName) names.set(t.underlyingTicker.toUpperCase(), t.underlyingName);
-  }
+  const byAddress = new Map(official.map((t) => [t.tokenContractAddress.toLowerCase(), t]));
   const byTicker = new Map();
   for (const t of publicTokens) {
     const key = t.ticker.toUpperCase();
-    const entry = byTicker.get(key) ?? { ticker: key, name: names.get(key) ?? null, versions: [] };
-    entry.versions.push(t.symbol);
+    const o = byAddress.get(t.address.toLowerCase());
+    const entry = byTicker.get(key) ?? { ticker: key, name: null, logo: null, versions: [] };
+    if (o) {
+      entry.name ??= o.underlyingName ?? null;
+      entry.logo ??= o.tokenLogoUrl ?? null;
+    }
+    const price = Number(o?.tokenPrice);
+    const ratio = Number(o?.tokenToShareRatio ?? t.multiplier);
+    entry.versions.push({
+      symbol: t.symbol,
+      provider: PROVIDER_BY_TYPE[t.type],
+      address: t.address,
+      listedPerShare: price > 0 && ratio > 0 ? price / ratio : null,
+      status: !o?.statusInfo ? null
+        : o.statusInfo.reasonCode === 'MARKET_CLOSED' ? 'closed'
+        : o.statusInfo.openState !== false && (o.statusInfo.reasonCode ?? 'TRADING') === 'TRADING' ? 'open'
+        : 'halted',
+      reason: o?.statusInfo?.reasonMsg ?? null,
+    });
     byTicker.set(key, entry);
   }
-  const stocks = [...byTicker.values()].sort(
-    (a, b) => b.versions.length - a.versions.length || a.ticker.localeCompare(b.ticker),
-  );
-  stockCache = { at: Date.now(), stocks };
-  return stocks;
+  const order = { ondo: 0, xstocks: 1, bstock: 2 };
+  const stocks = [...byTicker.values()].map((s) => {
+    s.versions.sort((a, b) => order[a.provider] - order[b.provider]);
+    const prices = s.versions.map((v) => v.listedPerShare).filter((p) => p > 0);
+    s.listedGapPct = prices.length > 1 ? ((Math.max(...prices) - Math.min(...prices)) / Math.min(...prices)) * 100 : null;
+    return s;
+  });
+  return stocks.sort((a, b) => b.versions.length - a.versions.length || a.ticker.localeCompare(b.ticker));
+}
+
+// Tokenized stocks held by a wallet on BSC, converted from tokens into real shares.
+export async function holdings(address) {
+  const [stocks, pages] = await Promise.all([listStocks(), walletAssets(address)]);
+  const versions = new Map();
+  for (const s of stocks) for (const v of s.versions) versions.set(v.address.toLowerCase(), { stock: s, version: v });
+  const { tokensForTicker } = await import('./rwa.js');
+  const rows = [];
+  for (const a of pages) {
+    const hit = versions.get(a.tokenContractAddress?.toLowerCase());
+    if (!hit) continue;
+    const tokens = Number(a.rawBalance) / 1e18; // tokenized stocks on BSC use 18 decimals
+    if (!(tokens > 0)) continue;
+    const meta = (await tokensForTicker(hit.stock.ticker)).find((t) => t.address.toLowerCase() === hit.version.address.toLowerCase());
+    const multiplier = Number(meta?.multiplier ?? 1);
+    const shares = tokens * multiplier;
+    rows.push({
+      ticker: hit.stock.ticker,
+      name: hit.stock.name,
+      logo: hit.stock.logo,
+      symbol: hit.version.symbol,
+      provider: hit.version.provider,
+      address: hit.version.address,
+      tokens,
+      multiplier,
+      shares,
+      valueUsd: hit.version.listedPerShare ? shares * hit.version.listedPerShare : null,
+    });
+  }
+  return rows.sort((a, b) => (b.valueUsd ?? 0) - (a.valueUsd ?? 0));
+}
+
+async function walletAssets(address) {
+  const all = [];
+  for (let page = 1; page <= 10; page++) {
+    const data = await call('GET', '/api/v1/dex/balance/all-token-balances-by-address', {
+      params: { address, chains: '56', excludeRiskToken: true, page, pageSize: 100 },
+    });
+    const assets = (Array.isArray(data) ? data : [data]).flatMap((d) => d?.tokenAssets ?? []);
+    all.push(...assets);
+    if (assets.length < 100) break;
+  }
+  return all;
 }
 
 export async function buildComparison({ ticker, usd, side = 'buy', wallet }) {

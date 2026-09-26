@@ -1,7 +1,7 @@
 const RULES = [
   {
     title: 'Count real shares, not tokens',
-    body: 'Each token stands for a number of shares set by its issuer — close to one, but it drifts with dividends and jumps with splits. Nett divides every price by that multiplier before comparing anything.',
+    body: 'Each token stands for a number of shares set by its issuer — close to one, but it drifts with dividends and jumps with splits. Every price is divided by that multiplier before anything is compared.',
   },
   {
     title: 'Price what the money buys',
@@ -9,37 +9,40 @@ const RULES = [
   },
   {
     title: 'Refuse what cannot be bought',
-    body: 'If a version returns no quote — not enough liquidity, or its issuer is closed outside US hours — it is refused, however cheap its listed price looks.',
+    body: 'A version that returns no quote — not enough liquidity, or an issuer closed outside US hours — is refused, however cheap its listed price looks.',
   },
   {
-    title: 'Refuse what has stopped tracking the stock',
-    body: 'A version priced more than 3% away from the underlying stock is refused; beyond 1% it is flagged. On weekends the reference is the last US close, so gaps are expected to widen.',
+    title: 'Refuse what has stopped tracking',
+    body: 'More than 3% from the underlying stock and a version is refused; past 1% it is flagged. On weekends the reference is the last US close, so gaps widen.',
   },
   {
     title: 'Refuse halted stocks',
     body: 'Issuers pause tokens for splits, dividends and mergers. A paused version is refused with the issuer’s own reason.',
   },
+  {
+    title: 'Check again before you sign',
+    body: 'When you buy, Nett re-runs every check for your wallet, approves exactly the amount you spend, and simulates the transaction before your wallet asks you to confirm.',
+  },
 ];
 
 export default function Rules() {
   return (
-    <div className="rules">
-      <h1 className="headline">How Nett decides</h1>
-      <ol className="rule-list">
-        {RULES.map((r, i) => (
-          <li key={r.title}>
-            <span className="rule-n" aria-hidden="true">{i + 1}</span>
-            <div>
+    <div className="page">
+      <div className="wrap">
+        <header className="page-head">
+          <h1 className="page-title">How Nett decides</h1>
+          <p className="page-lede">Six rules, applied to every version of every stock, every time you compare.</p>
+        </header>
+        <ol className="rules">
+          {RULES.map((r, i) => (
+            <li key={r.title} className="rule">
+              <span className="rule-n mono" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
               <h2>{r.title}</h2>
               <p>{r.body}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
-      <p className="fineprint">
-        Among the versions that pass, Nett picks the lowest price per real share when buying. It never picks for you
-        silently: every refused version stays on screen with its reason.
-      </p>
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
   );
 }
