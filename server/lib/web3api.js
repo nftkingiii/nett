@@ -31,12 +31,38 @@ export function sign({ timestamp, method, pathWithQuery, body = '', secret }) {
   return crypto.createHmac('sha256', secret).update(preHash, 'utf8').digest('base64');
 }
 
-export async function call(method, path, { params, body, env = process.env, timeoutMs = 15_000 } = {}) {
+// Local clocks drift; the API rejects timestamps more than 5 s off (40103). The error carries
+// the server time, so learn the offset from it and retry once.
+let clockOffsetMs = 0;
+export const clockOffset = () => clockOffsetMs;
+
+export function learnClockOffset(message, sentAtMs) {
+  const match = /serverTime=(\S+Z)/.exec(message ?? '');
+  if (!match) return false;
+  const serverMs = Date.parse(match[1].replace(/(\.\d{3})\d+Z$/, '$1Z'));
+  if (Number.isNaN(serverMs)) return false;
+  clockOffsetMs = serverMs - sentAtMs;
+  return true;
+}
+
+export async function call(method, path, opts = {}) {
+  const sentAt = Date.now();
+  try {
+    return await send(method, path, opts);
+  } catch (err) {
+    if (err instanceof Web3ApiError && String(err.code) === '40103' && learnClockOffset(err.message, sentAt)) {
+      return send(method, path, opts);
+    }
+    throw err;
+  }
+}
+
+async function send(method, path, { params, body, env = process.env, timeoutMs = 15_000 } = {}) {
   if (!hasCredentials(env)) throw new Error('WEB3_API_KEY and WEB3_SECRET_KEY are not set.');
   const query = buildQuery(params);
   const pathWithQuery = query ? `${path}?${query}` : path;
   const bodyText = body === undefined ? '' : JSON.stringify(body);
-  const timestamp = new Date().toISOString();
+  const timestamp = new Date(Date.now() + clockOffsetMs).toISOString();
   const headers = {
     'X-OC-APIKEY': env.WEB3_API_KEY,
     'X-OC-TIMESTAMP': timestamp,

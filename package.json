@@ -9,7 +9,8 @@
   },
   "scripts": {
     "compare": "node --env-file-if-exists=.env scripts/compare.js",
-    "test": "node --test \"server/**/*.test.js\""
+    "test": "node --test \"server/**/*.test.js\"",
+    "probe": "node --env-file-if-exists=.env scripts/probe-quotes.js"
   },
   "license": "MIT"
 }
