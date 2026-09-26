@@ -5,9 +5,10 @@ import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 import './styles.css';
 import App from './App.jsx';
+import Landing from './Landing.jsx';
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    {window.location.pathname.startsWith('/app') ? <App /> : <Landing />}
   </StrictMode>,
 );

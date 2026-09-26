@@ -3,7 +3,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildComparison, holdings, listStocks } from './lib/nett.js';
+import { buildComparison, holdings, listStocks, showcase } from './lib/nett.js';
 import { hasCredentials } from './lib/web3api.js';
 import { prepareTrade, tradeStatus, TradeError, TRADE_LIMITS } from './lib/trade.js';
 
@@ -79,10 +79,16 @@ async function serveStatic(res, urlPath) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  res.on('finish', () => {
+    if (res.statusCode >= 400) console.warn(`${res.statusCode} ${req.method} ${url.pathname}`);
+  });
   const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() ?? req.socket.remoteAddress;
   try {
     if (url.pathname === '/api/health') {
       return send(res, 200, { ok: true, revision: REVISION, quotes: hasCredentials() });
+    }
+    if (url.pathname === '/api/showcase') {
+      return send(res, 200, await showcase());
     }
     if (url.pathname === '/api/stocks') {
       return send(res, 200, { stocks: await listStocks() });

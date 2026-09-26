@@ -29,7 +29,7 @@ export default function Buy({ stocks, request, wallet, walletError, onConnect })
         err.status === 404 ? `${t} has no tokenized version on BNB Chain yet.`
         : err.status === 429 ? 'That was a lot of comparisons. Wait a minute and try again.'
         : err.message;
-      setState({ status: 'error', message });
+      setState((s) => ({ status: 'error', message, previous: s.previous ?? s.result }));
     }
   };
 
@@ -42,6 +42,7 @@ export default function Buy({ stocks, request, wallet, walletError, onConnect })
 
   const pick = (t) => { setTicker(t); run(t); };
   const result = state.status === 'ready' ? state.result : state.previous;
+  const refreshing = state.status === 'loading' && Boolean(result);
   const byTicker = (t) => stocks.find((s) => s.ticker === t);
 
   return (
@@ -87,7 +88,12 @@ export default function Buy({ stocks, request, wallet, walletError, onConnect })
       </div>
 
       <div className="wrap">
-        {state.status === 'error' && <p className="banner is-bad" role="alert">{state.message}</p>}
+        {state.status === 'error' && (
+          <p className="banner is-bad" role="alert">
+            {state.message}{result ? ` Showing the last result for ${result.ticker}.` : ''}
+          </p>
+        )}
+        {refreshing && <p className="refreshing" role="status">Re-weighing with fresh quotes…</p>}
         {state.status === 'loading' && !result && <Skeleton />}
         {result && (
           <Result result={result} stock={byTicker(result.ticker)} stale={state.status === 'loading'} wallet={wallet} walletError={walletError} onConnect={onConnect} />
@@ -155,7 +161,6 @@ function NetTag({ result, best, name, stock }) {
     return (
       <div className="net-tag is-none">
         <span className="tag-hole" aria-hidden="true" />
-        <p className="tag-label">Nett verdict</p>
         <h2 className="tag-headline">Don't buy {name} right now.</h2>
         <p className="tag-note">Every version failed a check for {usd(result.usd, 0)}. The reasons are listed below.</p>
       </div>
@@ -168,7 +173,6 @@ function NetTag({ result, best, name, stock }) {
       <div className="tag-top">
         <CompanyMark logo={stock?.logo} ticker={result.ticker} size={44} />
         <div>
-          <p className="tag-label">Nett verdict</p>
           <h2 className="tag-headline">
             Buy <span className="mono">{best.symbol}</span>
           </h2>
@@ -203,7 +207,7 @@ function SpreadStrip({ result, name }) {
         <span className="strip-title">Distance from the real stock</span>
         <span className="muted small">{name} {result.reference ? usd(result.reference) : ''} = 0</span>
       </figcaption>
-      <div className="strip-axis" role="img" aria-label={points.map((r) => `${r.symbol} ${pct(r.premiumPct)}`).join(', ')}>
+      <div className="strip-axis" role="img" aria-label={points.map((r) => `${r.symbol} ${pct(r.premiumPct)}, ${r.verdict === 'blocked' ? 'refused' : r.verdict === 'caution' ? 'caution' : 'clean'}`).join('; ')}>
         <span className="strip-zone is-bad-left" />
         <span className="strip-zone is-warn-left" />
         <span className="strip-zone is-ok" />

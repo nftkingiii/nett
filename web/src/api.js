@@ -29,3 +29,4 @@ export const fetchComparison = ({ ticker, usd }) =>
   getJson(`/api/compare?ticker=${encodeURIComponent(ticker)}&usd=${encodeURIComponent(usd)}&side=buy`);
 
 export const fetchHoldings = (address) => getJson(`/api/holdings?address=${encodeURIComponent(address)}`);
+export const fetchShowcase = () => getJson('/api/showcase');

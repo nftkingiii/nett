@@ -186,3 +186,35 @@ export async function buildComparison({ ticker, usd, side = 'buy', wallet }) {
     ...compare(tokens, snapshots, { usd, side, session, quotes, reference }),
   };
 }
+
+// Live proof for the landing page, cached so visitors do not each spend quote quota.
+let showcaseCache = { at: 0, data: null, pending: null };
+export async function showcase({ ttlMs = 60_000 } = {}) {
+  if (showcaseCache.data && Date.now() - showcaseCache.at < ttlMs) return showcaseCache.data;
+  if (showcaseCache.pending) return showcaseCache.pending;
+  showcaseCache.pending = (async () => {
+    const [stocks, example] = await Promise.all([listStocks(), buildComparison({ ticker: 'GOOGL', usd: 10 })]);
+    const multi = stocks.filter((s) => s.versions.length > 1);
+    const data = {
+      at: new Date().toISOString(),
+      counts: {
+        stocks: stocks.length,
+        multi: multi.length,
+        all3: stocks.filter((s) => s.versions.length >= 3).length,
+        versions: stocks.reduce((n, s) => n + s.versions.length, 0),
+      },
+      widestGaps: multi
+        .filter((s) => s.listedGapPct !== null)
+        .sort((a, b) => b.listedGapPct - a.listedGapPct)
+        .slice(0, 5)
+        .map(({ ticker, name, logo, listedGapPct, versions }) => ({ ticker, name, logo, listedGapPct, versions: versions.map((v) => v.symbol) })),
+      example: { ...example, stock: stocks.find((s) => s.ticker === 'GOOGL') ?? null },
+    };
+    showcaseCache = { at: Date.now(), data, pending: null };
+    return data;
+  })().catch((err) => {
+    showcaseCache.pending = null;
+    throw err;
+  });
+  return showcaseCache.pending;
+}

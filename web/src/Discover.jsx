@@ -111,6 +111,8 @@ export default function Discover({ stocks, error, onOpen }) {
                               <span key={p} className={`wrapper${v ? '' : ' is-absent'}${v?.status ? ` is-${v.status}` : ''}`} title={v ? `${v.symbol}${v.status === 'closed' ? ' · closed until the US market reopens' : v.status === 'halted' ? ` · halted${v.reason ? `: ${v.reason}` : ''}` : ''}` : `No ${PROVIDERS[p].name} version`}>
                                 <IssuerMark provider={p} size={16} />
                                 <span className="mono">{v ? PROVIDERS[p].suffix : '—'}</span>
+                                {v?.status === 'closed' && <span className="visually-hidden">closed</span>}
+                                {v?.status === 'halted' && <span className="visually-hidden">halted</span>}
                               </span>
                             );
                           })}

@@ -113,7 +113,7 @@ function Review({ plan, onSign, onCancel }) {
         </p>
         <dl className="review-grid">
           <div><dt>Token</dt><dd>USDT</dd></div>
-          <div><dt>Spender</dt><dd className="mono-text">{shortAddress(plan.spender)}</dd></div>
+          <div><dt>Spender</dt><dd><a className="mono-text" href={`https://bscscan.com/address/${plan.spender}`} target="_blank" rel="noreferrer">{shortAddress(plan.spender)}</a></dd></div>
           <div><dt>Simulation</dt><dd className={sim.ok ? 'good' : 'bad'}>{sim.ok ? 'Passes' : `Fails: ${sim.failReason || sim.status}`}</dd></div>
         </dl>
         <div className="review-actions">

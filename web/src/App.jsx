@@ -24,6 +24,8 @@ export default function App() {
   const [wallet, setWallet] = useState(null);
   const [picking, setPicking] = useState(false);
   const [walletError, setWalletError] = useState(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     fetchHealth().then(setHealth).catch(() => setHealth({ ok: false }));
@@ -80,9 +82,9 @@ export default function App() {
     <div className={`app tab-${tab}`}>
       <header className="topbar">
         <div className="wrap topbar-inner">
-          <button type="button" className="wordmark" onClick={() => setTab('buy')} aria-label="Nett home">
+          <a className="wordmark" href="/" aria-label="Nett home">
             nett<span className="wordmark-dot" aria-hidden="true" />
-          </button>
+          </a>
           <nav className="tabs" role="tablist" aria-label="Sections" onKeyDown={onTabKey}>
             {TABS.map(({ id, label, Icon }) => (
               <button
@@ -102,13 +104,34 @@ export default function App() {
           </nav>
           <div className="wallet-slot">
             {wallet ? (
-              <span className={`wallet-chip${wrongNetwork ? ' is-wrong' : ''}`} title={wallet.address}>
+              <button
+                type="button"
+                className={`wallet-chip${wrongNetwork ? ' is-wrong' : ''}`}
+                aria-haspopup="menu"
+                aria-expanded={accountOpen}
+                onClick={() => setAccountOpen((v) => !v)}
+              >
                 {wallet.icon && <img src={wallet.icon} alt="" width="18" height="18" />}
                 {shortAddress(wallet.address)}
                 {wrongNetwork && <span className="small"> · wrong network</span>}
-              </span>
+              </button>
             ) : (
               <button type="button" className="btn btn-dark" onClick={requestConnect}>Connect wallet</button>
+            )}
+            {wallet && accountOpen && (
+              <ul className="wallet-menu" role="menu">
+                <li>
+                  <button type="button" role="menuitem" onClick={() => { navigator.clipboard?.writeText(wallet.address); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
+                    {copied ? 'Copied' : 'Copy address'}
+                  </button>
+                </li>
+                <li>
+                  <a role="menuitem" href={`https://bscscan.com/address/${wallet.address}`} target="_blank" rel="noreferrer">View on BscScan</a>
+                </li>
+                <li>
+                  <button type="button" role="menuitem" onClick={() => { setWallet(null); setAccountOpen(false); }}>Disconnect from Nett</button>
+                </li>
+              </ul>
             )}
             {picking && (
               <ul className="wallet-menu" role="menu">

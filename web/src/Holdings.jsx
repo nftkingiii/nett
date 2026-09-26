@@ -20,6 +20,7 @@ export default function Holdings({ wallet, walletError, onConnect, onOpen, activ
   }, [active, wallet?.address]);
 
   const total = state.rows?.reduce((sum, r) => sum + (r.valueUsd ?? 0), 0) ?? 0;
+  const unpriced = state.rows?.filter((r) => r.valueUsd === null).length ?? 0;
 
   return (
     <div className="page">
@@ -47,7 +48,7 @@ export default function Holdings({ wallet, walletError, onConnect, onOpen, activ
         ) : state.status === 'ready' ? (
           <>
             <div className="holdings-total">
-              <span className="muted">Listed value</span>
+              <span className="muted">Listed value{unpriced ? ` of priced holdings (${unpriced} without a listed price)` : ''}</span>
               <span className="holdings-total-value mono">{usd(total)}</span>
               <span className="muted small">{shortAddress(wallet.address)} · Binance Wallet API balances</span>
             </div>
