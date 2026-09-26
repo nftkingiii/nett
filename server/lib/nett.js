@@ -64,6 +64,34 @@ async function quoteAll(tokens, usd, receiver) {
   );
 }
 
+// Stocks that have at least one BSC version, with names from the official list where available.
+let stockCache = { at: 0, stocks: null };
+export async function listStocks() {
+  if (stockCache.stocks && Date.now() - stockCache.at < 10 * 60 * 1000) return stockCache.stocks;
+  const [publicTokens, official] = await Promise.all([
+    import('./rwa.js').then((m) => m.listBscTokens()),
+    hasCredentials()
+      ? call('GET', '/api/v1/dex/market/rwa/tokens', { params: { binanceChainId: 56 } }).catch(() => [])
+      : [],
+  ]);
+  const names = new Map();
+  for (const t of official ?? []) {
+    if (t.underlyingTicker && t.underlyingName) names.set(t.underlyingTicker.toUpperCase(), t.underlyingName);
+  }
+  const byTicker = new Map();
+  for (const t of publicTokens) {
+    const key = t.ticker.toUpperCase();
+    const entry = byTicker.get(key) ?? { ticker: key, name: names.get(key) ?? null, versions: [] };
+    entry.versions.push(t.symbol);
+    byTicker.set(key, entry);
+  }
+  const stocks = [...byTicker.values()].sort(
+    (a, b) => b.versions.length - a.versions.length || a.ticker.localeCompare(b.ticker),
+  );
+  stockCache = { at: Date.now(), stocks };
+  return stocks;
+}
+
 export async function buildComparison({ ticker, usd, side = 'buy', wallet }) {
   const tokens = await tokensForTicker(ticker);
   if (tokens.length === 0) return { ticker: ticker.toUpperCase(), routes: [], notFound: true };
