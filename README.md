@@ -51,7 +51,8 @@ more than 1% less USDT than Nett's. Agent endpoints: `/api/agent/plan`, `/api/ag
 | What | Evidence |
 |---|---|
 | Agentic Wallet buy via `nett-agent buy GOOGL 5` | 5 USDT → 0.014546257 GOOGLB (0.014553211 real shares of Alphabet), [tx 0xe87f…1670](https://bscscan.com/tx/0xe87f904965d2830cf7fb0cb35d918006b492e816c6e9cd0383c4cbe4dc3c1670), block 124297085, 27 Sep 2026 |
-| Refused on the same run | GOOGLx: no liquidity for the amount (`40374`); GOOGLon: below the $5 minimum (`40375`) |
+| Agentic Wallet sell via `nett-agent sell GOOGL GOOGLB 100` | 0.0145393 GOOGLB (0.014546 real shares) → 4.995 USDT, $343.39/real share (+0.10% vs the stock), [tx 0xacb7…67db](https://bscscan.com/tx/0xacb7eaee7b629a0253bb34ff66943cfea82890399f557679d121175da19c67db), block 124339939, 27 Sep 2026 |
+| Refused on the buy run | GOOGLx: no liquidity for the amount (`40374`); GOOGLon: below the $5 minimum (`40375`) |
 | Read-back | Binance Wallet API transaction detail plus a direct `balanceOf` read of the GOOGLB contract |
 
 Demo video: *link added at submission*.
