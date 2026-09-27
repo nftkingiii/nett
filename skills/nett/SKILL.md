@@ -34,8 +34,9 @@ Not for: selling, perps, or non-stock tokens (use `binance-agentic-wallet` direc
 1. Complete the `binance-agentic-wallet` preflight (skill version, `baw` version, `baw wallet status`).
    If the wallet is `UNCONNECTED`, stop and guide sign-in (`baw auth signin` → user confirms the pairing
    code in the Binance app → `baw auth verify`). Never ask for keys, seed phrases or passwords.
-2. Node 20+ must be available to run `nett-agent` (from this repository: `node scripts/nett-agent.js`,
-   or `npx github:nftkingiii/nett nett-agent`).
+2. Node 22+ must be available to run `nett-agent`: `npx -y github:nftkingiii/nett <command>` runs it
+   straight from GitHub (or `node scripts/nett-agent.js` inside a clone). Install this skill with
+   `npx skills add nftkingiii/nett`.
 
 ## Buying — always through `nett-agent`
 

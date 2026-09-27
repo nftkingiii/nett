@@ -20,8 +20,28 @@ The same US stock trades on BNB Smart Chain as up to three different tokens — 
 | Trading | `aggregator/quote`, `aggregator/swap`, `aggregator/approve-transaction` | executable quotes, unsigned swap and exact-amount approval |
 | Transaction | `pre-transaction/simulate` | dry-run of every approval and swap before signing |
 | Wallet | `balance/all-token-balances-by-address`, `post-transaction/transaction-detail-by-txhash` | holdings and post-trade read-back |
+| Agentic Wallet | `baw` CLI: `wallet status/settings/address`, `market-order quote/swap/list`, `limit-order buy` | agent execution within the wallet's own limits |
 
 Public Binance wallet endpoints supply the xStocks list, which the official RWA list does not include.
+
+## For AI agents: Binance Agentic Wallet
+
+Nett decides; the Binance Agentic Wallet executes. The `nett` skill (`skills/nett/SKILL.md`) and the
+`nett-agent` runner drive the official `baw` CLI with Nett's checks enforced in code.
+
+```bash
+npx skills add nftkingiii/nett                              # add the skill to your agent
+npx -y github:nftkingiii/nett plan GOOGL 10                 # what Nett would buy, and what it refuses
+npx -y github:nftkingiii/nett buy GOOGL 10                  # dry run: checks + Agentic Wallet quote
+npx -y github:nftkingiii/nett buy GOOGL 10 --ack-no-audit --yes     # submit, poll, verify on-chain
+npx -y github:nftkingiii/nett limit AAPL 10 320             # limit order at a *share* price
+```
+
+A buy stops if the wallet is not connected or over its daily limit, if every version is refused, if the
+plan's command targets anything but the checked token and amount, or if the Agentic Wallet's own quote
+buys less stock than Nett's floor. Orders are polled to `FINISHED`/`FAILED` and the delivery is read
+back and counted in real shares. Agent endpoints: `/api/agent/plan`, `/api/agent/limit-plan`,
+`/api/agent/verify`.
 
 ## Run locally
 
