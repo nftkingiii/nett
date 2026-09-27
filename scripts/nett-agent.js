@@ -50,7 +50,8 @@ function baw(args, { timeoutMs = 60_000 } = {}) {
     execFile(file, [...pre, ...args], { timeout: timeoutMs, windowsHide: true }, (err, stdout) => {
       let json;
       try {
-        json = JSON.parse(stdout);
+        // Order and strategy ids exceed 2^53; quote them before parsing so no digits are lost.
+        json = JSON.parse(stdout.replace(/("(?:orderId|strategyId)"\s*:\s*)(\d{16,})/g, '$1"$2"'));
       } catch {
         return reject(new Stop(err?.code === 'ENOENT' ? 'The baw CLI is not installed: npm install -g @binance/agentic-wallet' : `baw returned no JSON for "${args.slice(0, 2).join(' ')}"`));
       }
@@ -172,10 +173,15 @@ async function buy(tickerArg, usdArg) {
   checkCommand(plan.baw.swap, plan, usd);
   // The Agentic Wallet's own route must buy at least as much stock as Nett's check allowed.
   const q = await baw(plan.baw.quote);
-  const walletTokens = Number(q.toCoinAmount);
+  // The Agentic Wallet has been seen quoting (and showing balances) in share terms — tokens × multiplier —
+  // for bStock. Until that is documented, read the quote whichever way buys less, so a split token
+  // (multiplier 5–10) can never pass the floor on a unit mix-up.
+  const m = plan.chosen.multiplier;
+  const quoted = Number(q.toCoinAmount);
+  const walletTokens = Math.min(quoted, quoted / m);
   const floor = plan.guardrails.minTokensFromWalletQuote;
-  const walletPerShare = usd / (walletTokens * plan.chosen.multiplier);
-  say(`Agentic Wallet quote: ${walletTokens} ${plan.chosen.symbol} → $${walletPerShare.toFixed(4)}/real share (Nett floor ${floor})`);
+  const walletPerShare = usd / (walletTokens * m);
+  say(`Agentic Wallet quote: ${quoted} (read conservatively as ${walletTokens.toFixed(12)} ${plan.chosen.symbol} tokens) → $${walletPerShare.toFixed(4)}/real share (Nett floor ${floor})`);
   if (!(walletTokens >= floor)) {
     throw new Stop(`The Agentic Wallet route buys ${walletTokens}, below Nett's floor of ${floor}. Not buying.`);
   }
@@ -187,15 +193,18 @@ async function buy(tickerArg, usdArg) {
     return;
   }
 
+  const submittedAt = Date.now();
   const submitted = await baw(plan.baw.swap);
   say(`Submitted order ${submitted.orderId}; waiting for a final state…`);
-  const order = await pollOrder(submitted.orderId);
+  const order = await pollOrder(submitted.orderId, { toToken: plan.chosen.address, qty: usd, since: submittedAt });
+  if (order.matchedBy) say(`Found the order as ${order.orderId} by ${order.matchedBy}.`);
   const out = { kind: 'market-buy', ticker, usd, wallet, plan, walletQuote: q, order };
   if (order.status !== 'FINISHED') {
     out.file = await receipt('failed', out);
     throw new Stop(`Order ${submitted.orderId} ended ${order.status}${order.txHash ? ` (tx ${order.txHash})` : ''}. Receipt: ${out.file}`, 4);
   }
   say(`Order FINISHED · tx ${order.txHash}`);
+  if (!/^0x[0-9a-fA-F]{64}$/.test(order.txHash ?? '')) throw new Stop('The finished order has no transaction hash to verify.', 4);
   const verify = await nett(`/api/agent/verify?txHash=${order.txHash}&token=${plan.chosen.address}${wallet ? `&wallet=${wallet}` : ''}&multiplier=${plan.chosen.multiplier}`);
   out.verify = verify;
   const file = await receipt('buy', out);
@@ -203,13 +212,22 @@ async function buy(tickerArg, usdArg) {
   else say(`Order finished but Nett could not confirm the transfer yet (${verify.status}). Receipt: ${file}`);
 }
 
-async function pollOrder(orderId, { timeoutMs = 120_000 } = {}) {
+// Poll an order to a terminal state. If the id lookup finds nothing, match the most recent order for
+// the same token and amount booked since submission, and say that the match was used.
+async function pollOrder(orderId, { timeoutMs = 120_000, toToken, qty, since } = {}) {
   if (!/^[0-9A-Za-z-]+$/.test(String(orderId))) throw new Stop('Unexpected order id from baw.');
   const start = Date.now();
   let last = null;
   while (Date.now() - start < timeoutMs) {
-    const data = await baw(['market-order', 'list', '--orderId', String(orderId), '--json']);
-    last = data?.list?.[0] ?? null;
+    const byId = await baw(['market-order', 'list', '--orderId', String(orderId), '--json']);
+    last = byId?.list?.[0] ?? null;
+    if (!last && toToken) {
+      const recent = await baw(['market-order', 'list', '--toToken', toToken, '--binanceChainId', '56', '--pageSize', '10', '--json']);
+      last = (recent?.list ?? []).find(
+        (o) => Number(o.fromTokenQty) === Number(qty) && (!since || Date.parse(o.bookTime) >= since - 60_000),
+      ) ?? null;
+      if (last) last.matchedBy = 'token+amount+time (order id lookup returned nothing)';
+    }
     if (last && (last.status === 'FINISHED' || last.status === 'FAILED')) return last;
     await new Promise((r) => setTimeout(r, 4000));
   }
@@ -247,6 +265,7 @@ async function main() {
   if (command === 'buy') return buy(rest[0], rest[1]);
   if (command === 'limit') return limit(rest[0], rest[1], rest[2]);
   if (command === 'order') return say(JSON.stringify(await pollOrder(rest[0], { timeoutMs: 1 }), null, 2));
+  if (command === 'recent') return say(JSON.stringify(await baw(['market-order', 'list', '--binanceChainId', '56', '--pageSize', '5', '--json']), null, 2));
   say('Usage: nett-agent preflight | plan <TICKER> <USD> | buy <TICKER> <USD> [--yes] [--ack-no-audit] | limit <TICKER> <USD> <SHARE_PRICE> [--yes] [--ack-no-audit] | order <ID>');
   process.exitCode = 1;
 }
