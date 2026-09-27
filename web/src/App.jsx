@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { fetchHealth, fetchStocks } from './api.js';
-import { connect, discoverWallets, shortAddress, BSC_CHAIN_HEX } from './wallet.js';
+import { connect, discoverWallets, isUserRejection, shortAddress, switchToBsc, BSC_CHAIN_HEX } from './wallet.js';
 import { BookIcon, CompassIcon, TagIcon, WalletIcon } from './icons.jsx';
 import Buy from './Buy.jsx';
 import Discover from './Discover.jsx';
@@ -26,6 +26,7 @@ export default function App() {
   const [walletError, setWalletError] = useState(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     fetchHealth().then(setHealth).catch(() => setHealth({ ok: false }));
@@ -33,16 +34,39 @@ export default function App() {
   }, []);
   useEffect(() => discoverWallets(setWallets), []);
 
+  // Ask the wallet to move to BNB Chain (adding it if missing), then re-read the chain:
+  // some wallets switch without emitting chainChanged.
+  const ensureBsc = useCallback(async (provider) => {
+    setSwitching(true);
+    setWalletError(null);
+    try {
+      await switchToBsc(provider);
+      const chainId = await provider.request({ method: 'eth_chainId' });
+      setWallet((w) => (w && w.provider === provider ? { ...w, chainId } : w));
+      return chainId?.toLowerCase() === BSC_CHAIN_HEX;
+    } catch (err) {
+      setWalletError(
+        isUserRejection(err)
+          ? 'You declined the switch to BNB Chain. Nett only trades on BNB Chain — use “Switch to BNB Chain” when ready.'
+          : `Could not switch networks: ${err.message}`,
+      );
+      return false;
+    } finally {
+      setSwitching(false);
+    }
+  }, []);
+
   const connectWith = useCallback(async (w) => {
     setPicking(false);
     setWalletError(null);
     try {
       const { address, chainId } = await connect(w.provider);
       setWallet({ ...w, address, chainId });
+      if (chainId?.toLowerCase() !== BSC_CHAIN_HEX) await ensureBsc(w.provider);
     } catch (err) {
       setWalletError(err?.code === 4001 ? 'Connection declined in your wallet.' : err.message);
     }
-  }, []);
+  }, [ensureBsc]);
 
   const requestConnect = useCallback(() => {
     if (wallets.length === 0) return setWalletError('No browser wallet found. Install the Binance Wallet extension, then reload.');
@@ -113,13 +137,20 @@ export default function App() {
               >
                 {wallet.icon && <img src={wallet.icon} alt="" width="18" height="18" />}
                 {shortAddress(wallet.address)}
-                {wrongNetwork && <span className="small"> · wrong network</span>}
+                {wrongNetwork && <span className="small"> · {switching ? 'switching…' : 'wrong network'}</span>}
               </button>
             ) : (
               <button type="button" className="btn btn-dark" onClick={requestConnect}>Connect wallet</button>
             )}
             {wallet && accountOpen && (
               <ul className="wallet-menu" role="menu">
+                {wrongNetwork && (
+                  <li>
+                    <button type="button" role="menuitem" disabled={switching} onClick={() => { setAccountOpen(false); ensureBsc(wallet.provider); }}>
+                      {switching ? 'Switching…' : 'Switch to BNB Chain'}
+                    </button>
+                  </li>
+                )}
                 <li>
                   <button type="button" role="menuitem" onClick={() => { navigator.clipboard?.writeText(wallet.address); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>
                     {copied ? 'Copied' : 'Copy address'}
@@ -148,6 +179,22 @@ export default function App() {
         </div>
       </header>
 
+      {(wrongNetwork || walletError) && (
+        <div className="wrap">
+          <div className={`banner net-banner${wrongNetwork ? '' : ' is-bad'}`} role="alert">
+            <span>
+              {wrongNetwork
+                ? walletError ?? `${shortAddress(wallet.address)} is on another network. Nett trades only on BNB Chain.`
+                : walletError}
+            </span>
+            {wrongNetwork && (
+              <button type="button" className="btn btn-accent" disabled={switching} onClick={() => ensureBsc(wallet.provider)}>
+                {switching ? 'Switching…' : 'Switch to BNB Chain'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {(health && !health.ok) || (health?.ok && !health.quotes) ? (
         <div className="wrap">
           <p className={`banner ${health.ok ? '' : 'is-bad'}`} role="status">
@@ -160,7 +207,7 @@ export default function App() {
 
       <main>
         <section id="panel-buy" role="tabpanel" aria-labelledby="tab-buy" hidden={tab !== 'buy'}>
-          <Buy stocks={stocks} request={request} wallet={wallet} walletError={walletError} onConnect={requestConnect} />
+          <Buy stocks={stocks} request={request} wallet={wallet} walletError={walletError} onConnect={requestConnect} onSwitchNetwork={ensureBsc} switching={switching} />
         </section>
         <section id="panel-discover" role="tabpanel" aria-labelledby="tab-discover" hidden={tab !== 'discover'}>
           <Discover stocks={stocks} error={stocksError} onOpen={openStock} />

@@ -420,3 +420,5 @@ img { display: block; }
   .l-why { padding-top: 64px; }
 }
 .nowrap { white-space: nowrap; }
+.net-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.net-banner .btn { min-height: 40px; }

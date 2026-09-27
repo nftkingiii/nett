@@ -1,20 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import { prepareTrade, fetchTradeStatus } from './api.js';
 import { pct, shares, usd } from './format.js';
-import { BSC_CHAIN_HEX, isUserRejection, sendTransaction, shortAddress, switchToBsc } from './wallet.js';
+import { BSC_CHAIN_HEX, isUserRejection, sendTransaction, shortAddress } from './wallet.js';
 
 const EXPLORER = 'https://bscscan.com/tx/';
 const USDT = '0x55d398326f99059ff775485246999027b3197955';
 
 // One valid next action at a time:
 // connect → switch network → prepare → review → sign → confirming → done (approval loops back to prepare).
-export default function Trade({ route, ticker, amount, wallet, walletError, onConnect, onClose }) {
+export default function Trade({ route, ticker, amount, wallet, walletError, onConnect, onSwitchNetwork, switching, onClose }) {
   const [step, setStep] = useState({ name: 'start' });
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
   const safeSet = (s) => alive.current && setStep(s);
 
   const needsNetwork = wallet && wallet.chainId?.toLowerCase() !== BSC_CHAIN_HEX;
+
+  // Opening a trade on the wrong network asks the wallet to switch once; after that the button remains.
+  const autoSwitched = useRef(false);
+  useEffect(() => {
+    if (needsNetwork && !autoSwitched.current && onSwitchNetwork) {
+      autoSwitched.current = true;
+      onSwitchNetwork(wallet.provider);
+    }
+  }, [needsNetwork, onSwitchNetwork, wallet?.provider]);
 
   const prepare = async () => {
     safeSet({ name: 'preparing' });
@@ -54,11 +63,15 @@ export default function Trade({ route, ticker, amount, wallet, walletError, onCo
           {walletError && <p className="notice is-error" role="alert">{walletError}</p>}
         </>
       ) : needsNetwork ? (
-        <Action
-          text={`${shortAddress(wallet.address)} is on another network.`}
-          label="Switch to BNB Chain"
-          onClick={() => switchToBsc(wallet.provider).catch((e) => safeSet({ name: 'error', message: e.message }))}
-        />
+        <>
+          <Action
+            text={switching ? `Asking your wallet to switch ${shortAddress(wallet.address)} to BNB Chain — confirm it there.` : `${shortAddress(wallet.address)} is on another network. Nett trades only on BNB Chain.`}
+            label={switching ? 'Switching…' : 'Switch to BNB Chain'}
+            disabled={switching}
+            onClick={() => onSwitchNetwork(wallet.provider)}
+          />
+          {walletError && <p className="notice is-error" role="alert">{walletError}</p>}
+        </>
       ) : step.name === 'start' ? (
         <Action
           text={`Nett re-checks ${route.symbol} with a fresh quote for ${usd(amount, 0)}, then simulates the transaction before you sign.`}
@@ -93,11 +106,11 @@ export default function Trade({ route, ticker, amount, wallet, walletError, onCo
   );
 }
 
-function Action({ text, label, onClick }) {
+function Action({ text, label, onClick, disabled }) {
   return (
     <div className="trade-action">
       <p>{text}</p>
-      <button type="button" className="btn btn-accent" onClick={onClick}>{label}</button>
+      <button type="button" className="btn btn-accent" onClick={onClick} disabled={disabled}>{label}</button>
     </div>
   );
 }

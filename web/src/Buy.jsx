@@ -9,7 +9,7 @@ import { CompanyMark, IssuerMark, PROVIDERS } from './ui.jsx';
 const QUICK = ['GOOGL', 'AAPL', 'NVDA', 'QQQ', 'TSLA'];
 const AXIS = 3; // ±% shown on the spread strip; matches the refusal limit
 
-export default function Buy({ stocks, request, wallet, walletError, onConnect }) {
+export default function Buy({ stocks, request, wallet, walletError, onConnect, onSwitchNetwork, switching }) {
   const [ticker, setTicker] = useState(request.ticker);
   const [amount, setAmount] = useState('10');
   const [state, setState] = useState({ status: 'idle' });
@@ -96,14 +96,14 @@ export default function Buy({ stocks, request, wallet, walletError, onConnect })
         {refreshing && <p className="refreshing" role="status">Re-weighing with fresh quotes…</p>}
         {state.status === 'loading' && !result && <Skeleton />}
         {result && (
-          <Result result={result} stock={byTicker(result.ticker)} stale={state.status === 'loading'} wallet={wallet} walletError={walletError} onConnect={onConnect} />
+          <Result result={result} stock={byTicker(result.ticker)} stale={state.status === 'loading'} wallet={wallet} walletError={walletError} onConnect={onConnect} onSwitchNetwork={onSwitchNetwork} switching={switching} />
         )}
       </div>
     </>
   );
 }
 
-function Result({ result, stock, stale, wallet, walletError, onConnect }) {
+function Result({ result, stock, stale, wallet, walletError, onConnect, onSwitchNetwork, switching }) {
   const [buying, setBuying] = useState(null);
   useEffect(() => setBuying(null), [result.ticker, result.usd, result.at]);
   const best = result.routes.find((r) => r.symbol === result.best);
@@ -144,7 +144,7 @@ function Result({ result, stock, stale, wallet, walletError, onConnect }) {
       </ol>
 
       {buyingRoute && (
-        <Trade route={buyingRoute} ticker={result.ticker} amount={result.usd} wallet={wallet} walletError={walletError} onConnect={onConnect} onClose={() => setBuying(null)} />
+        <Trade route={buyingRoute} ticker={result.ticker} amount={result.usd} wallet={wallet} walletError={walletError} onConnect={onConnect} onSwitchNetwork={onSwitchNetwork} switching={switching} onClose={() => setBuying(null)} />
       )}
 
       <p className="fineprint">
