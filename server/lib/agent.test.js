@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bawArgs, tokenTriggerPrice, agentPlan } from './agent.js';
+import { bawArgs, bawSellQty, tokenTriggerPrice, agentPlan } from './agent.js';
 
 test('a share-price target becomes a token trigger via the multiplier', () => {
   assert.equal(tokenTriggerPrice(330, 1.0004780589781075), 330.157759);
@@ -23,4 +23,14 @@ test('baw commands carry exactly the checked token, amount, chain and slippage c
 test('agent buys above the cap are refused before any network call', async () => {
   const plan = await agentPlan({ ticker: 'GOOGL', usd: 500 });
   assert.equal(plan.decision, 'refuse');
+});
+
+test('bStock sell quantities go to the Agentic Wallet in share terms, rounded down', () => {
+  // The 27 Sep sale: 0.014546257072186585 GOOGLB tokens × 1.0004780589781075 shares/token.
+  const q = bawSellQty(14546257072186585n, 1.0004780589781075, 'bstock');
+  assert.equal(q.unit, 'shares');
+  assert.ok(Number(q.qty) <= 0.014546257072186585 * 1.0004780589781075);
+  assert.ok(Number(q.qty) > 0.01455321);
+  // Unverified issuers keep the token count, which can only sell less.
+  assert.deepEqual(bawSellQty(14546257072186585n, 1.25, 'ondo'), { qty: '0.014546257072186585', unit: 'tokens' });
 });

@@ -106,10 +106,21 @@ export async function agentLimitPlan({ ticker, usd, sharePrice }) {
   };
 }
 
+// Issuers whose Agentic Wallet quantities are in share terms (tokens × multiplier). Verified for bStock on
+// 27 Sep 2026: --fromTokenQty 0.014546257 sold 0.014546257 ÷ 1.000478 GOOGLB tokens. For the others it is
+// unverified, so the token count is passed: if baw reads it as shares it sells slightly less, never more.
+const SHARE_QTY_ISSUERS = new Set(['bstock']);
+
+// The --fromTokenQty to pass for `amount` raw tokens (18 decimals), rounded down so the wallet
+// never converts it back into more tokens than it holds.
+export function bawSellQty(amount, multiplier, issuer) {
+  if (!SHARE_QTY_ISSUERS.has(issuer) || !(multiplier > 0)) return { qty: formatUnits(amount), unit: 'tokens' };
+  const scaled = BigInt(Math.floor(multiplier * 1e12)); // multiplier to 12 decimals, rounded down
+  return { qty: formatUnits((amount * scaled) / 10n ** 12n), unit: 'shares' };
+}
+
 // "Sell part of what the Agentic Wallet holds": Nett checks the sale (status, balance, a live quote,
 // price per real share against the stock); the Agentic Wallet executes it as a market order into USDT.
-// The quantity is given in tokens read from the contract. If baw reads it as shares it sells slightly
-// less, never more than the wallet holds.
 export async function agentSellPlan({ ticker, symbol, percent, wallet }) {
   let check;
   try {
@@ -119,7 +130,7 @@ export async function agentSellPlan({ ticker, symbol, percent, wallet }) {
     throw err;
   }
   const { comparison, route, amount, tokens, usdtOut, sale } = check;
-  const qty = formatUnits(amount);
+  const { qty, unit } = bawSellQty(amount, route.multiplier, route.provider);
   const now = Date.now();
   return {
     decision: 'sell',
@@ -132,8 +143,11 @@ export async function agentSellPlan({ ticker, symbol, percent, wallet }) {
       issuer: route.provider,
       address: route.address,
       multiplier: route.multiplier,
-      tokens: qty,
+      tokens: formatUnits(amount),
       shares: round(tokens * route.multiplier, 9),
+      // What baw is given, and in which unit it reads it for this issuer.
+      walletQty: qty,
+      walletQtyUnit: unit,
       expectedUsdt: round(usdtOut, 6),
       perShare: round(sale.perShare, 4),
       premiumPct: round(sale.gapPct, 3),

@@ -249,6 +249,7 @@ async function sell(tickerArg, symbolArg, percentArg) {
   if (plan.decision !== 'sell') throw new Stop(`Nett refuses: ${plan.reason}`, 2);
   const c = plan.chosen;
   say(`Nett checked ${c.symbol} (${c.issuer}): sell ${c.tokens} tokens = ${c.shares} real shares of ${ticker}`);
+  say(`Agentic Wallet quantity: ${c.walletQty} (${c.walletQtyUnit}${c.walletQtyUnit === 'shares' ? `, ${c.symbol} amounts are share-adjusted in the wallet` : ''})`);
   say(`Quote ≈ ${c.expectedUsdt} USDT → $${c.perShare}/real share, ${c.premiumPct >= 0 ? '+' : ''}${c.premiumPct}% vs stock $${plan.reference.price}`);
   for (const w of c.warnings) say(`  caution: ${w}`);
 
@@ -257,7 +258,8 @@ async function sell(tickerArg, symbolArg, percentArg) {
     const at = (name) => args[args.indexOf(name) + 1];
     if (at('--fromToken')?.toLowerCase() !== c.address.toLowerCase()) throw new Stop('Plan command sells a different token than Nett checked.');
     if (at('--toToken')?.toLowerCase() !== USDT.toLowerCase()) throw new Stop('Plan command does not sell into USDT.');
-    if (at('--fromTokenQty') !== c.tokens) throw new Stop('Plan command sells a different quantity.');
+    if (at('--fromTokenQty') !== c.walletQty) throw new Stop('Plan command sells a different quantity.');
+    if (c.walletQtyUnit === 'shares' && !(Number(c.walletQty) <= Number(c.tokens) * c.multiplier)) throw new Stop('Plan quantity is more than the holding.');
     if (at('--binanceChainId') !== '56') throw new Stop('Plan command is not for BNB Smart Chain.');
   }
   const q = await baw(plan.baw.quote);
@@ -269,14 +271,14 @@ async function sell(tickerArg, symbolArg, percentArg) {
 
   if (!flags.has('--yes')) {
     say(`
-Dry run. To sell: ${c.tokens} ${c.symbol} for ≈${walletUsdt} USDT, slippage ${plan.guardrails.slippagePercent}%.`);
+Dry run. To sell: ${c.shares} real shares (${c.tokens} ${c.symbol}) for ≈${walletUsdt} USDT, slippage ${plan.guardrails.slippagePercent}%.`);
     say('Re-run with --yes to submit through the Agentic Wallet.');
     return;
   }
   const submittedAt = Date.now();
   const submitted = await baw(plan.baw.swap);
   say(`Submitted order ${submitted.orderId}; waiting for a final state…`);
-  const order = await pollOrder(submitted.orderId, { fromToken: c.address, qty: c.tokens, since: submittedAt });
+  const order = await pollOrder(submitted.orderId, { fromToken: c.address, qty: c.walletQty, since: submittedAt });
   if (order.matchedBy) say(`Found the order as ${order.orderId} by ${order.matchedBy}.`);
   const out = { kind: 'market-sell', ticker, wallet, plan, walletQuote: q, order };
   if (order.status !== 'FINISHED') {
@@ -288,7 +290,15 @@ Dry run. To sell: ${c.tokens} ${c.symbol} for ≈${walletUsdt} USDT, slippage ${
   const verify = await nett(`/api/agent/verify?txHash=${order.txHash}&token=${USDT}&wallet=${wallet}`);
   out.verify = verify;
   const file = await receipt('sell', out);
-  if (verify.verified) say(`Verified on-chain: ${verify.received.tokens} USDT arrived for ${c.shares} real shares of ${ticker}. Receipt: ${file}`);
+  // Count what actually left the wallet, from the chain, rather than repeating the plan.
+  const soldTokens = (verify.transfers ?? [])
+    .filter((t) => t.token?.toLowerCase() === c.address.toLowerCase() && t.from?.toLowerCase() === wallet.toLowerCase())
+    .reduce((sum, t) => sum + Number(t.amount ?? 0), 0);
+  out.sold = { tokens: soldTokens, shares: Number((soldTokens * c.multiplier).toFixed(9)) };
+  await writeFile(file, JSON.stringify(out, null, 2));
+  if (verify.verified) {
+    say(`Verified on-chain: sold ${soldTokens || '?'} ${c.symbol} (${out.sold.shares || '?'} real shares of ${ticker}); ${verify.received.tokens} USDT arrived. Receipt: ${file}`);
+  }
   else say(`Order finished but Nett could not confirm the USDT transfer yet (${verify.status}). Receipt: ${file}`);
 }
 
