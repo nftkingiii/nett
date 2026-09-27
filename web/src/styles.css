@@ -266,6 +266,14 @@ img { display: block; }
 .holding-name .muted { display: flex; align-items: center; gap: 6px; font-weight: 400; }
 .holding-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
 .holdings.skeleton { height: 180px; border-radius: var(--r-md); }
+.holding-actions { display: flex; gap: 8px; }
+.holding-sell { grid-column: 1 / -1; display: grid; gap: 10px; }
+.holding-sell .trade { margin-top: 0; }
+.sell-parts { display: flex; flex-wrap: wrap; gap: 8px; }
+.part { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); cursor: pointer; font: 550 0.9rem var(--sans, inherit); }
+.part:hover { color: var(--ink); border-color: var(--ink-3); }
+.part[aria-checked="true"] { background: var(--violet); border-color: var(--violet); color: #fff; }
+.part:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
 
 /* Rules */
 .rules { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
@@ -290,6 +298,7 @@ img { display: block; }
   .verdict-grid { grid-template-columns: 1fr; }
   .holding { grid-template-columns: auto 1fr; }
   .holding-figures { grid-column: 1 / -1; }
+  .holding-actions { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
   .wrap { padding: 0 16px; }

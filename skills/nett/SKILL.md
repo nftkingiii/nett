@@ -26,8 +26,9 @@ is not always one share.
 - The user names a US stock or ETF and an amount to buy on BNB Chain.
 - The user wants a limit order expressed as a **share** price ("when Apple is $320").
 - The user asks which tokenized version (Ondo / xStocks / bStock) to buy.
+- The user wants to sell part or all of a tokenized-stock holding back to USDT.
 
-Not for: selling, perps, or non-stock tokens (use `binance-agentic-wallet` directly).
+Not for: perps, or non-stock tokens (use `binance-agentic-wallet` directly).
 
 ## Preflight
 
@@ -75,6 +76,17 @@ nett-agent limit <TICKER> <USD> <SHARE_PRICE>                        # dry run
 nett-agent limit <TICKER> <USD> <SHARE_PRICE> --ack-no-audit --yes   # place it
 ```
 
+## Selling a holding
+
+```bash
+nett-agent sell <TICKER> <SYMBOL> <25|50|100>         # dry run: balance, quote, price check, wallet quote
+nett-agent sell <TICKER> <SYMBOL> <25|50|100> --yes   # submit, poll to a final state, verify the USDT
+```
+
+Nett reads the holding from the contract, quotes the sale into USDT and refuses it if a real share would
+fetch more than 3% under the stock, or if the Agentic Wallet's own quote pays more than 1% less USDT than
+Nett's. The quantity is passed in tokens; if the wallet reads it as shares it sells slightly less, never more.
+
 ## Rules for the agent
 
 - **Confirm before submitting.** Show the user the version, contract address, amount, expected real
@@ -92,4 +104,5 @@ Agents that cannot run the script may call the API directly and must apply steps
 `GET https://nett.up.railway.app/api/agent/plan?ticker=GOOGL&usd=10` returns `decision`, `chosen`,
 `refused`, `guardrails` (including `minTokensFromWalletQuote`) and the exact `baw` argument arrays.
 `/api/agent/limit-plan?...&sharePrice=` adds `target.tokenTriggerPrice`;
+`/api/agent/sell-plan?ticker=&symbol=&percent=&wallet=` returns a checked sale with `minUsdtFromWalletQuote`;
 `/api/agent/verify?txHash=&token=&wallet=&multiplier=` confirms delivery.

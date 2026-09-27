@@ -3,7 +3,7 @@
 // executes. Every plan carries the guardrails the executor must enforce.
 import { buildComparison, listStocks } from './nett.js';
 import { STABLES } from './providers.js';
-import { tradeStatus } from './trade.js';
+import { checkSale, formatUnits, tradeStatus } from './trade.js';
 
 export const AGENT_GUARDRAILS = {
   maxUsd: 50,
@@ -103,6 +103,54 @@ export async function agentLimitPlan({ ticker, usd, sharePrice }) {
     target: { sharePrice, tokenTriggerPrice: triggerPrice, vsReferencePct: round(gapPct, 3) },
     baw: { limit: bawArgs('limit', { fromToken: STABLES.USDT.address, toToken: chosen.address, qty: usd, triggerPrice }) },
     note: `${chosen.symbol} is ${chosen.multiplier} shares per token, so a $${sharePrice} share is a $${triggerPrice} token.`,
+  };
+}
+
+// "Sell part of what the Agentic Wallet holds": Nett checks the sale (status, balance, a live quote,
+// price per real share against the stock); the Agentic Wallet executes it as a market order into USDT.
+// The quantity is given in tokens read from the contract. If baw reads it as shares it sells slightly
+// less, never more than the wallet holds.
+export async function agentSellPlan({ ticker, symbol, percent, wallet }) {
+  let check;
+  try {
+    check = await checkSale({ ticker, symbol, percent, wallet });
+  } catch (err) {
+    if (err.code) return { decision: 'refuse', ticker, symbol, reason: err.message };
+    throw err;
+  }
+  const { comparison, route, amount, tokens, usdtOut, sale } = check;
+  const qty = formatUnits(amount);
+  const now = Date.now();
+  return {
+    decision: 'sell',
+    ticker: comparison.ticker,
+    wallet,
+    percent,
+    reference: { price: comparison.reference, source: comparison.referenceSource },
+    chosen: {
+      symbol: route.symbol,
+      issuer: route.provider,
+      address: route.address,
+      multiplier: route.multiplier,
+      tokens: qty,
+      shares: round(tokens * route.multiplier, 9),
+      expectedUsdt: round(usdtOut, 6),
+      perShare: round(sale.perShare, 4),
+      premiumPct: round(sale.gapPct, 3),
+      warnings: sale.verdict === 'caution' ? [`Sells ${Math.abs(sale.gapPct).toFixed(2)}% under the stock.`] : [],
+    },
+    guardrails: {
+      ...AGENT_GUARDRAILS,
+      minUsdtFromWalletQuote: round(usdtOut * (1 - AGENT_GUARDRAILS.maxQuoteShortfallPct / 100), 6),
+      requireUserConfirmation: true,
+      pollOrderUntil: ['FINISHED', 'FAILED'],
+    },
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + AGENT_GUARDRAILS.planTtlSeconds * 1000).toISOString(),
+    baw: {
+      quote: bawArgs('quote', { fromToken: route.address, toToken: STABLES.USDT.address, qty }),
+      swap: bawArgs('swap', { fromToken: route.address, toToken: STABLES.USDT.address, qty }),
+    },
   };
 }
 

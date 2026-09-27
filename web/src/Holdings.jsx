@@ -4,10 +4,15 @@ import { shares, usd } from './format.js';
 import { ArrowRight } from './icons.jsx';
 import { shortName } from './StockPicker.jsx';
 import { CompanyMark, IssuerMark, PROVIDERS } from './ui.jsx';
+import Trade from './Trade.jsx';
 import { shortAddress } from './wallet.js';
 
-export default function Holdings({ wallet, walletError, onConnect, onOpen, active }) {
+const SELL_PARTS = [25, 50, 100];
+
+export default function Holdings({ wallet, walletError, onConnect, onOpen, onSwitchNetwork, switching, active }) {
   const [state, setState] = useState({ status: 'idle' });
+  const [selling, setSelling] = useState(null); // { address, percent }
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!active || !wallet?.address) return;
@@ -17,7 +22,7 @@ export default function Holdings({ wallet, walletError, onConnect, onOpen, activ
       .then((d) => live && setState({ status: 'ready', rows: d.holdings }))
       .catch((e) => live && setState({ status: 'error', message: e.message }));
     return () => { live = false; };
-  }, [active, wallet?.address]);
+  }, [active, wallet?.address, reload]);
 
   const total = state.rows?.reduce((sum, r) => sum + (r.valueUsd ?? 0), 0) ?? 0;
   const unpriced = state.rows?.filter((r) => r.valueUsd === null).length ?? 0;
@@ -65,7 +70,49 @@ export default function Holdings({ wallet, walletError, onConnect, onOpen, activ
                     <div><dt>Tokens held</dt><dd className="mono">{shares(r.tokens)}</dd></div>
                     <div><dt>Listed value</dt><dd className="mono">{r.valueUsd !== null ? usd(r.valueUsd) : '—'}</dd></div>
                   </dl>
-                  <button type="button" className="btn btn-line" onClick={() => onOpen(r.ticker)}>Compare</button>
+                  <div className="holding-actions">
+                    <button type="button" className="btn btn-line" onClick={() => onOpen(r.ticker)}>Compare</button>
+                    <button
+                      type="button"
+                      className="btn btn-line"
+                      aria-expanded={selling?.address === r.address}
+                      onClick={() => setSelling(selling?.address === r.address ? null : { address: r.address, percent: 100 })}
+                    >
+                      Sell
+                    </button>
+                  </div>
+                  {selling?.address === r.address && (
+                    <div className="holding-sell">
+                      <div className="sell-parts" role="radiogroup" aria-label="How much to sell">
+                        {SELL_PARTS.map((p) => (
+                          <button
+                            key={p}
+                            type="button"
+                            role="radio"
+                            aria-checked={selling.percent === p}
+                            className="part"
+                            onClick={() => setSelling({ address: r.address, percent: p })}
+                          >
+                            {p === 100 ? 'All' : `${p}%`} · {shares(r.shares * (p / 100))} sh
+                          </button>
+                        ))}
+                      </div>
+                      <Trade
+                        key={selling.percent}
+                        side="sell"
+                        percent={selling.percent}
+                        route={{ symbol: r.symbol }}
+                        ticker={r.ticker}
+                        wallet={wallet}
+                        walletError={walletError}
+                        onConnect={onConnect}
+                        onSwitchNetwork={onSwitchNetwork}
+                        switching={switching}
+                        onClose={() => setSelling(null)}
+                        onDone={() => setTimeout(() => setReload((n) => n + 1), 4000)}
+                      />
+                    </div>
+                  )}
                 </li>
               ))}
             </ol>

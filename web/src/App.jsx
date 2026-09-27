@@ -213,7 +213,7 @@ export default function App() {
           <Discover stocks={stocks} error={stocksError} onOpen={openStock} />
         </section>
         <section id="panel-holdings" role="tabpanel" aria-labelledby="tab-holdings" hidden={tab !== 'holdings'}>
-          <Holdings wallet={wallet} walletError={walletError} onConnect={requestConnect} onOpen={openStock} active={tab === 'holdings'} />
+          <Holdings wallet={wallet} walletError={walletError} onConnect={requestConnect} onOpen={openStock} onSwitchNetwork={ensureBsc} switching={switching} active={tab === 'holdings'} />
         </section>
         <section id="panel-rules" role="tabpanel" aria-labelledby="tab-rules" hidden={tab !== 'rules'}>
           <Rules />

@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildComparison, holdings, listStocks, showcase } from './lib/nett.js';
 import { hasCredentials } from './lib/web3api.js';
-import { prepareTrade, tradeStatus, TradeError, TRADE_LIMITS } from './lib/trade.js';
-import { agentLimitPlan, agentPlan, agentVerify } from './lib/agent.js';
+import { prepareSell, prepareTrade, tradeStatus, TradeError, TRADE_LIMITS } from './lib/trade.js';
+import { agentLimitPlan, agentPlan, agentSellPlan, agentVerify } from './lib/agent.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'dist');
@@ -138,6 +138,9 @@ const server = http.createServer(async (req, res) => {
         if (!/^[A-Z0-9.]{1,12}$/.test(ticker) || !/^[A-Za-z0-9.]{1,16}$/.test(symbol)) {
           return send(res, 400, { error: 'Choose a stock and a version.' });
         }
+        if (body.side === 'sell') {
+          return send(res, 200, await prepareSell({ ticker, symbol, percent: Number(body.percent), wallet: body.wallet }));
+        }
         return send(res, 200, await prepareTrade({ ticker, symbol, usd: Number(body.usd), wallet: body.wallet }));
       } catch (err) {
         if (err instanceof TradeError) return send(res, TRADE_STATUS[err.code] ?? 409, { error: err.message, code: err.code });
@@ -174,6 +177,14 @@ const server = http.createServer(async (req, res) => {
       if (!/^[A-Z0-9.]{1,12}$/.test(ticker)) return send(res, 400, { error: 'Give a stock ticker, e.g. GOOGL.' });
       const usd = Number(q.get('usd') ?? '10');
       if (url.pathname === '/api/agent/plan') return send(res, 200, await agentPlan({ ticker, usd }));
+      if (url.pathname === '/api/agent/sell-plan') {
+        const symbol = (q.get('symbol') ?? '').trim();
+        const wallet = q.get('wallet') ?? '';
+        if (!/^[A-Za-z0-9.]{1,16}$/.test(symbol) || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+          return send(res, 400, { error: 'Give symbol (e.g. GOOGLB), wallet and percent (25, 50 or 100).' });
+        }
+        return send(res, 200, await agentSellPlan({ ticker, symbol, percent: Number(q.get('percent')), wallet }));
+      }
       if (url.pathname === '/api/agent/limit-plan') {
         return send(res, 200, await agentLimitPlan({ ticker, usd, sharePrice: Number(q.get('sharePrice')) }));
       }

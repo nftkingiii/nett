@@ -8,7 +8,8 @@ const USDT = '0x55d398326f99059ff775485246999027b3197955';
 
 // One valid next action at a time:
 // connect → switch network → prepare → review → sign → confirming → done (approval loops back to prepare).
-export default function Trade({ route, ticker, amount, wallet, walletError, onConnect, onSwitchNetwork, switching, onClose }) {
+// side='sell' sells `percent` of the wallet's holding of route.symbol back to USDT.
+export default function Trade({ route, ticker, amount, side = 'buy', percent, wallet, walletError, onConnect, onSwitchNetwork, switching, onClose, onDone }) {
   const [step, setStep] = useState({ name: 'start' });
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
@@ -28,7 +29,9 @@ export default function Trade({ route, ticker, amount, wallet, walletError, onCo
   const prepare = async () => {
     safeSet({ name: 'preparing' });
     try {
-      const plan = await prepareTrade({ ticker, symbol: route.symbol, usd: amount, wallet: wallet.address });
+      const plan = side === 'sell'
+        ? await prepareTrade({ side, ticker, symbol: route.symbol, percent, wallet: wallet.address })
+        : await prepareTrade({ ticker, symbol: route.symbol, usd: amount, wallet: wallet.address });
       safeSet({ name: 'review', plan });
     } catch (err) {
       safeSet({ name: 'error', message: err.message, retry: true });
@@ -48,12 +51,13 @@ export default function Trade({ route, ticker, amount, wallet, walletError, onCo
     if (!alive.current) return;
     if (result.status === 'success' && plan.step === 'approve') return prepare();
     safeSet({ name: result.status === 'success' ? 'done' : 'failed', plan, txHash, result });
+    if (result.status === 'success') onDone?.();
   };
 
   return (
     <section className="trade" aria-live="polite">
       <div className="trade-head">
-        <h3>Buy {route.symbol}</h3>
+        <h3>{side === 'sell' ? `Sell ${percent}% of your ${route.symbol}` : `Buy ${route.symbol}`}</h3>
         <button type="button" className="link" onClick={onClose}>Close</button>
       </div>
 
@@ -74,7 +78,9 @@ export default function Trade({ route, ticker, amount, wallet, walletError, onCo
         </>
       ) : step.name === 'start' ? (
         <Action
-          text={`Nett re-checks ${route.symbol} with a fresh quote for ${usd(amount, 0)}, then simulates the transaction before you sign.`}
+          text={side === 'sell'
+            ? `Nett reads your ${route.symbol} balance, gets a fresh quote into USDT and checks the price per real share against the stock, then simulates before you sign.`
+            : `Nett re-checks ${route.symbol} with a fresh quote for ${usd(amount, 0)}, then simulates the transaction before you sign.`}
           label="Prepare trade"
           onClick={prepare}
         />
@@ -116,6 +122,7 @@ function Action({ text, label, onClick, disabled }) {
 }
 
 function Review({ plan, onSign, onCancel }) {
+  if (plan.side === 'sell') return <SellReview plan={plan} onSign={onSign} onCancel={onCancel} />;
   const sim = plan.simulation;
   if (plan.step === 'approve') {
     return (
@@ -156,7 +163,60 @@ function Review({ plan, onSign, onCancel }) {
   );
 }
 
+function SellReview({ plan, onSign, onCancel }) {
+  const sim = plan.simulation;
+  const simulation = <div><dt>Simulation</dt><dd className={sim.ok ? 'good' : 'bad'}>{sim.ok ? 'Passes' : `Fails: ${sim.failReason || sim.status}`}</dd></div>;
+  const price = <div><dt>Per real share</dt><dd>{usd(plan.route.perShare)} <span className="muted small">{pct(plan.route.premiumPct)} vs stock</span></dd></div>;
+  if (plan.step === 'approve') {
+    return (
+      <div className="review">
+        <p>
+          First, allow the Binance trading router to move <strong>exactly {shares(plan.tokens)} {plan.symbol}</strong> — the part you are
+          selling, not your whole balance or an unlimited amount.
+        </p>
+        <dl className="review-grid">
+          <div><dt>Selling</dt><dd>{shares(plan.shares)} real shares</dd></div>
+          <div><dt>For about</dt><dd>{usd(plan.expectedUsdt)} USDT</dd></div>
+          {price}
+          <div><dt>Spender</dt><dd><a className="mono-text" href={`https://bscscan.com/address/${plan.spender}`} target="_blank" rel="noreferrer">{shortAddress(plan.spender)}</a></dd></div>
+          {simulation}
+        </dl>
+        <div className="review-actions">
+          <button type="button" className="btn btn-accent" disabled={!sim.ok} onClick={onSign}>Approve {plan.symbol} in wallet</button>
+          <button type="button" className="link" onClick={onCancel}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="review">
+      <dl className="review-grid">
+        <div><dt>You sell</dt><dd>{shares(plan.tokens)} {plan.symbol} <span className="muted small">({shares(plan.shares)} real shares)</span></dd></div>
+        <div><dt>You get (expected)</dt><dd>{usd(plan.expectedUsdt)} USDT</dd></div>
+        <div><dt>At least</dt><dd>{plan.minUsdt ? `${usd(plan.minUsdt)} USDT` : '—'} <span className="muted small">({plan.slippagePercent}% slippage cap)</span></dd></div>
+        {price}
+        <div><dt>Route</dt><dd>{plan.vendor} · {plan.hops} {plan.hops === 1 ? 'hop' : 'hops'}</dd></div>
+        {simulation}
+      </dl>
+      <p className="muted small">The quote behind this transaction expires in about 30 seconds. If your wallet rejects it as stale, prepare again.</p>
+      <div className="review-actions">
+        <button type="button" className="btn btn-accent" disabled={!sim.ok} onClick={onSign}>Confirm in wallet</button>
+        <button type="button" className="link" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function Done({ step }) {
+  if (step.plan.side === 'sell') {
+    const received = step.result.transfers?.find((t) => t.token?.toLowerCase() === USDT && t.to?.toLowerCase() === step.plan.tx.from.toLowerCase());
+    return (
+      <div className="notice is-good" role="status">
+        <strong>Sold.</strong> {received ? `${received.amount} USDT arrived in your wallet.` : 'The swap confirmed.'}{' '}
+        <TxLink hash={step.txHash} />
+      </div>
+    );
+  }
   const received = step.result.transfers?.find((t) => t.symbol === step.plan.symbol);
   return (
     <div className="notice is-good" role="status">
