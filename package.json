@@ -13,7 +13,8 @@
     "probe": "node --env-file-if-exists=.env scripts/probe-quotes.js",
     "start": "node --env-file-if-exists=.env server/index.js",
     "build": "vite build",
-    "dev:web": "vite"
+    "dev:web": "vite",
+    "agent": "node scripts/nett-agent.js"
   },
   "license": "MIT",
   "devDependencies": {
@@ -24,5 +25,8 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "vite": "^8.3.1"
+  },
+  "bin": {
+    "nett-agent": "scripts/nett-agent.js"
   }
 }

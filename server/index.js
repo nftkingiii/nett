@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { buildComparison, holdings, listStocks, showcase } from './lib/nett.js';
 import { hasCredentials } from './lib/web3api.js';
 import { prepareTrade, tradeStatus, TradeError, TRADE_LIMITS } from './lib/trade.js';
+import { agentLimitPlan, agentPlan, agentVerify } from './lib/agent.js';
 
 const PORT = Number(process.env.PORT) || 8787;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'dist');
@@ -156,6 +157,27 @@ const server = http.createServer(async (req, res) => {
       if (!/^0x[0-9a-fA-F]{40}$/.test(address)) return send(res, 400, { error: 'Not a wallet address.' });
       if (rateLimited(ip)) return send(res, 429, { error: 'Too many requests; wait a minute.' });
       return send(res, 200, { address, holdings: await holdings(address) });
+    }
+    if (url.pathname.startsWith('/api/agent/')) {
+      if (rateLimited(ip)) return send(res, 429, { error: 'Too many requests; wait a minute.' });
+      const q = url.searchParams;
+      const ticker = (q.get('ticker') ?? '').trim().toUpperCase();
+      if (url.pathname === '/api/agent/verify') {
+        const txHash = q.get('txHash') ?? '';
+        const token = q.get('token') ?? '';
+        const wallet = q.get('wallet') || undefined;
+        if (!/^0x[0-9a-fA-F]{64}$/.test(txHash) || !/^0x[0-9a-fA-F]{40}$/.test(token) || (wallet && !/^0x[0-9a-fA-F]{40}$/.test(wallet))) {
+          return send(res, 400, { error: 'Give txHash, token and optionally wallet as hex.' });
+        }
+        return send(res, 200, await agentVerify({ txHash, token, wallet, multiplier: Number(q.get('multiplier')) || null }));
+      }
+      if (!/^[A-Z0-9.]{1,12}$/.test(ticker)) return send(res, 400, { error: 'Give a stock ticker, e.g. GOOGL.' });
+      const usd = Number(q.get('usd') ?? '10');
+      if (url.pathname === '/api/agent/plan') return send(res, 200, await agentPlan({ ticker, usd }));
+      if (url.pathname === '/api/agent/limit-plan') {
+        return send(res, 200, await agentLimitPlan({ ticker, usd, sharePrice: Number(q.get('sharePrice')) }));
+      }
+      return send(res, 404, { error: 'Not found' });
     }
     if (url.pathname === '/api/trade/limits') return send(res, 200, TRADE_LIMITS);
     if (url.pathname.startsWith('/api/')) return send(res, 404, { error: 'Not found' });

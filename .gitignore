@@ -9,3 +9,6 @@ dist/
 PROJECT_STATE.md
 HACK_EVENT_GATE.json
 notes/
+
+# Agent run receipts (wallet addresses, order ids)
+receipts/
