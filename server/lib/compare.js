@@ -25,6 +25,7 @@ export function pickReference(snapshots) {
 // Trading API errors that mean "this route cannot be traded right now".
 const QUOTE_ERRORS = {
   40374: ['no_liquidity', 'Not enough liquidity to fill this amount right now.'],
+  40375: ['below_minimum', 'Below this route’s minimum order ($5); try a larger amount.'],
   40367: ['market_closed', 'Ondo is not taking orders outside US market hours.'],
   40369: ['market_closed', 'bStock is not taking orders outside US market hours.'],
 };

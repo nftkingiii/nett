@@ -122,6 +122,12 @@ test('a closed market is refused as closed, not as a halt', () => {
   assert.match(r.reasons[0].message, /closed until the US market reopens/);
 });
 
+test('a quote below the route minimum is refused with its own reason', () => {
+  const snaps = [{ tokenPrice: '100', multiplier: '1', referencePrice: '100', status: { openState: true, reasonCode: 'TRADING' } }];
+  const r = compare([tokens[0]], snaps, { usd: 5, quotes: [{ error: { code: 40375, message: 'Minimum order amount is 5 USD.' } }] }).routes[0];
+  assert.equal(r.reasons[0].code, 'below_minimum');
+});
+
 test('no eligible route means no pick', () => {
   const snaps = tokens.map(() => ({ tokenPrice: null, multiplier: '1', referencePrice: '100', status: trading }));
   assert.equal(compare(tokens, snaps, { usd: 10 }).best, null);
