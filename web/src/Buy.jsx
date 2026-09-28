@@ -158,15 +158,21 @@ function Result({ result, stock, stale, wallet, walletError, onConnect, onSwitch
 
 function NetTag({ result, best, name, stock }) {
   if (!best) {
+    const busy = result.routes.some((r) => r.busy);
     return (
       <div className="net-tag is-none">
         <span className="tag-hole" aria-hidden="true" />
-        <h2 className="tag-headline">Don't buy {name} right now.</h2>
-        <p className="tag-note">Every version failed a check for {usd(result.usd, 0)}. The reasons are listed below.</p>
+        <h2 className="tag-headline">{busy ? 'Binance is busy. Try again shortly.' : `Don't buy ${name} right now.`}</h2>
+        <p className="tag-note">
+          {busy
+            ? 'Some versions could not be checked because Binance is rate-limiting quotes. Compare again in a few seconds.'
+            : `Every version failed a check for ${usd(result.usd, 0)}. The reasons are listed below.`}
+        </p>
       </div>
     );
   }
-  const refused = result.routes.filter((r) => r.verdict === 'blocked').length;
+  const refused = result.routes.filter((r) => r.verdict === 'blocked' && !r.busy).length;
+  const busy = result.routes.filter((r) => r.busy).length;
   return (
     <div className="net-tag">
       <span className="tag-hole" aria-hidden="true" />
@@ -193,6 +199,7 @@ function NetTag({ result, best, name, stock }) {
         </div>
       </dl>
       {refused > 0 && <p className="tag-note"><StopIcon /> {refused} {refused === 1 ? 'version' : 'versions'} refused — see below.</p>}
+      {busy > 0 && <p className="tag-note"><AlertIcon /> {busy} {busy === 1 ? 'version' : 'versions'} not checked: Binance is busy. Compare again in a few seconds.</p>}
     </div>
   );
 }
@@ -241,7 +248,7 @@ function VersionCard({ route: r, isBest, usdAmount, canBuy, isBuying, onBuy }) {
   const how = r.execution
     ? `${r.execution.mode === 'RFQ' ? 'Dealer quote' : 'Pool swap'} · ${r.execution.hops} ${r.execution.hops === 1 ? 'hop' : 'hops'}`
     : blocked ? 'No executable quote' : 'Listed price';
-  const StateIcon = blocked ? StopIcon : r.verdict === 'caution' ? AlertIcon : CheckIcon;
+  const StateIcon = r.busy || r.verdict === 'caution' ? AlertIcon : blocked ? StopIcon : CheckIcon;
   return (
     <li className={`version is-${r.verdict}${isBest ? ' is-best' : ''}${isBuying ? ' is-buying' : ''}`}>
       <div className="version-head">
@@ -250,9 +257,9 @@ function VersionCard({ route: r, isBest, usdAmount, canBuy, isBuying, onBuy }) {
           <div className="version-symbol mono">{r.symbol}</div>
           <div className="muted small">{PROVIDERS[r.provider]?.name} · {how}</div>
         </div>
-        <span className={`state state-${isBest ? 'best' : r.verdict}`}>
+        <span className={`state state-${isBest ? 'best' : r.busy ? 'caution' : r.verdict}`}>
           <StateIcon width={14} height={14} />
-          {isBest ? 'Best' : { ok: 'Clean', caution: 'Caution', blocked: 'Refused' }[r.verdict]}
+          {isBest ? 'Best' : r.busy ? 'Busy' : { ok: 'Clean', caution: 'Caution', blocked: 'Refused' }[r.verdict]}
         </span>
       </div>
       <dl className="version-figures">
@@ -262,7 +269,7 @@ function VersionCard({ route: r, isBest, usdAmount, canBuy, isBuying, onBuy }) {
       </dl>
       {main.length > 0 && (
         <ul className="version-reasons">
-          {main.map((x) => <li key={x.code + x.message} className={x.severity === 'block' ? 'bad' : 'warn'}>{x.message}</li>)}
+          {main.map((x) => <li key={x.code + x.message} className={x.severity === 'block' && x.code !== 'busy' ? 'bad' : 'warn'}>{x.message}</li>)}
         </ul>
       )}
       {canBuy && !isBuying && (

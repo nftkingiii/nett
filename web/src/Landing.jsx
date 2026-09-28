@@ -213,6 +213,7 @@ export default function Landing() {
 
 function Verdict({ route, isBest }) {
   if (isBest) return <span className="state state-best"><CheckIcon width={13} height={13} />Best</span>;
+  if (route.busy) return <span className="state state-caution"><AlertIcon width={13} height={13} />Busy</span>;
   if (route.verdict === 'blocked') return <span className="state state-blocked"><StopIcon width={13} height={13} />Refused</span>;
   if (route.verdict === 'caution') return <span className="state state-caution"><AlertIcon width={13} height={13} />Caution</span>;
   return <span className="state state-ok"><CheckIcon width={13} height={13} />Clean</span>;

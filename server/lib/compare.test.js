@@ -132,3 +132,30 @@ test('no eligible route means no pick', () => {
   const snaps = tokens.map(() => ({ tokenPrice: null, multiplier: '1', referencePrice: '100', status: trading }));
   assert.equal(compare(tokens, snaps, { usd: 10 }).best, null);
 });
+
+test('a rate-limited quote is "busy", not a refusal of the token', () => {
+  const snaps = tokens.map(() => ({ tokenPrice: '343.70', multiplier: '1.00048', referencePrice: '343.705', status: trading }));
+  const quotes = [
+    { error: { code: 42900, message: 'Rate limit exceeded' } },
+    { error: { code: 40374, message: 'Insufficient liquidity' } },
+    { tokensOut: 10 / 343.9 / 1.00048, executionMode: 'SWAP', priceImpactPercent: '0.002' },
+  ];
+  const result = compare(tokens, snaps, { usd: 10, quotes });
+  const on = result.routes.find((r) => r.symbol === 'GOOGLon');
+  const x = result.routes.find((r) => r.symbol === 'GOOGLx');
+  assert.equal(on.verdict, 'blocked');
+  assert.equal(on.busy, true);
+  assert.equal(x.busy, false);
+  assert.equal(result.best, 'GOOGLB');
+});
+
+test('a route that returns almost nothing is refused in plain words', () => {
+  // Seen live on 28 Sep: MSFTon "best" route with 99.95% price impact, ~$1bn per share.
+  const snaps = [{ tokenPrice: '514.26', multiplier: '1.00573', referencePrice: '508.70', status: trading }];
+  const quotes = [{ tokensOut: 9.76e-9, executionMode: 'SWAP', priceImpactPercent: '0.9995012209' }];
+  const r = compare([{ symbol: 'MSFTon', type: 1, address: '0x0a', multiplier: '1.00573' }], snaps, { usd: 10, quotes }).routes[0];
+  assert.equal(r.verdict, 'blocked');
+  assert.equal(r.reasons[0].code, 'extreme_impact');
+  assert.match(r.reasons[0].message, /99\.95% price impact/);
+  assert.ok(r.perShare < 1000, 'shows the listed price, not the billion-dollar quote');
+});

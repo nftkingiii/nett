@@ -45,12 +45,20 @@ export function learnClockOffset(message, sentAtMs) {
   return true;
 }
 
+// A 42900 rate-limit refusal is retried once after a short pause; a second one is thrown.
+export const RATE_LIMIT_RETRY_MS = 1200;
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
 export async function call(method, path, opts = {}) {
   const sentAt = Date.now();
   try {
     return await send(method, path, opts);
   } catch (err) {
     if (err instanceof Web3ApiError && String(err.code) === '40103' && learnClockOffset(err.message, sentAt)) {
+      return send(method, path, opts);
+    }
+    if (err instanceof Web3ApiError && String(err.code) === '42900' && opts.retryRateLimit !== false) {
+      await pause((opts.retryDelayMs ?? RATE_LIMIT_RETRY_MS) + Math.random() * 400);
       return send(method, path, opts);
     }
     throw err;
@@ -86,9 +94,23 @@ async function send(method, path, { params, body, env = process.env, timeoutMs =
 
 // Trading API quote. `amount` is in the sell token's smallest unit. RFQ routes (Ondo, bStock)
 // need `userWalletAddress`, which becomes the receiver of the RFQ order.
+// Comparison quotes are reused for a short while, and identical requests in flight share one call,
+// so visitors flicking between stocks do not spend the key's quote quota. Trades never use this:
+// they fetch their own fresh quote to bind the swap.
+export const QUOTE_TTL_MS = 20_000;
+const quoteCache = new Map();
+
 export function quote({ fromTokenAddress, toTokenAddress, amount, userWalletAddress }, opts) {
-  return call('GET', '/api/v1/dex/aggregator/quote', {
+  const key = [fromTokenAddress, toTokenAddress, amount, userWalletAddress].join('|').toLowerCase();
+  const hit = quoteCache.get(key);
+  if (hit && Date.now() - hit.at < QUOTE_TTL_MS) return hit.promise;
+  const promise = call('GET', '/api/v1/dex/aggregator/quote', {
     ...opts,
     params: { binanceChainId: 56, fromTokenAddress, toTokenAddress, amount, userWalletAddress },
   });
+  quoteCache.set(key, { at: Date.now(), promise });
+  // Failures are not cached; the next visitor asks again.
+  promise.catch(() => quoteCache.get(key)?.promise === promise && quoteCache.delete(key));
+  if (quoteCache.size > 500) quoteCache.delete(quoteCache.keys().next().value);
+  return promise;
 }

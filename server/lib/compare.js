@@ -28,7 +28,13 @@ const QUOTE_ERRORS = {
   40375: ['below_minimum', 'Below this route’s minimum order ($5); try a larger amount.'],
   40367: ['market_closed', 'Ondo is not taking orders outside US market hours.'],
   40369: ['market_closed', 'bStock is not taking orders outside US market hours.'],
+  // Not a verdict on the token: Binance declined to quote because the key is over its rate limit.
+  42900: ['busy', 'Not checked: Binance is rate-limiting quotes right now. Try again in a few seconds.'],
 };
+
+// The Trading API can return a "best" route through a near-empty pool (priceImpactPercent is a
+// fraction: 0.9995 = 99.95%). Past this, the route is refused as returning almost nothing.
+export const MAX_PRICE_IMPACT = 0.5;
 
 export function assessRoute(token, snapshot, { reference, session, quote, usd, policy = DEFAULT_POLICY }) {
   const provider = PROVIDERS[token.type];
@@ -70,6 +76,9 @@ export function assessRoute(token, snapshot, { reference, session, quote, usd, p
   if (quote?.error) {
     const [code, message] = QUOTE_ERRORS[quote.error.code] ?? ['quote_failed', `No quote: ${quote.error.message}`];
     block(code, message);
+  } else if (num(quote?.priceImpactPercent) >= MAX_PRICE_IMPACT) {
+    const impact = (num(quote.priceImpactPercent) * 100).toFixed(2);
+    block('extreme_impact', `The only route returns almost nothing for this amount (${impact}% price impact).`);
   } else if (quote?.tokensOut > 0 && multiplier > 0 && usd > 0) {
     perShare = usd / (quote.tokensOut * multiplier);
     priceBasis = 'quote';
@@ -85,7 +94,9 @@ export function assessRoute(token, snapshot, { reference, session, quote, usd, p
   if (perShare !== null && reference) {
     premiumPct = ((perShare - reference) / reference) * 100;
     const distance = Math.abs(premiumPct);
-    if (distance > policy.maxPremiumPct) {
+    if (distance > 100) {
+      block('off_reference', `Priced at more than double the stock; the limit is ±${policy.maxPremiumPct}%.`);
+    } else if (distance > policy.maxPremiumPct) {
       block('off_reference', `Priced ${signed(premiumPct)} away from the stock; the limit is ±${policy.maxPremiumPct}%.`);
     } else if (distance > policy.cautionPremiumPct) {
       warn('off_reference', `Priced ${signed(premiumPct)} away from the stock.`);
@@ -120,6 +131,8 @@ export function assessRoute(token, snapshot, { reference, session, quote, usd, p
     priceBasis,
     premiumPct,
     verdict,
+    // Blocked only because Binance was rate-limiting: not a judgement on the token.
+    busy: verdict === 'blocked' && reasons.filter((x) => x.severity === 'block').every((x) => x.code === 'busy'),
     reasons,
   };
 }
